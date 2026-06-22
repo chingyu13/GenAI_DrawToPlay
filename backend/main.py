@@ -2,6 +2,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
+from agent import chat, get_city_result
+from tools import get_weather, get_city_image, get_city_description
 
 app = FastAPI()
 
@@ -13,15 +16,37 @@ app.add_middleware(
 )
 
 class MessageRequest(BaseModel):
-    message: str
+    message:    str
     session_id: str
+    image:      Optional[str] = None  # base64 data URL, first message only
+
 
 @app.post("/chat")
-async def chat(req: MessageRequest):
-    # TODO: wire up LangChain agent
-    return {"reply": "Agent not yet connected."}
+async def chat_endpoint(req: MessageRequest):
+    result = chat(req.session_id, req.message, req.image)
+    return result
+
 
 @app.post("/city-result")
-async def city_result(req: MessageRequest):
-    # TODO: trigger final city lookup + weather + image
-    return {"city": None, "weather": None, "image": None, "description": None}
+async def city_result_endpoint(req: MessageRequest):
+    city_data = get_city_result(req.session_id)
+
+    if "error" in city_data:
+        return city_data
+
+    city          = city_data.get("city")
+    country       = city_data.get("country")
+    weather_query = city_data.get("weather_query", city)
+
+    weather     = get_weather(weather_query)
+    image       = get_city_image(f"{city} city landscape")
+    description = get_city_description(city)
+
+    return {
+        "city":        city,
+        "country":     country,
+        "reason":      city_data.get("reason"),
+        "weather":     weather,
+        "image":       image,
+        "description": description,
+    }
