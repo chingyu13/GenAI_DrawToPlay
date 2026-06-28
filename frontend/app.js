@@ -611,7 +611,7 @@ function resetIdleTimer() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     if (phase === 'drawing' && hasDrawn) showCompleteBtn();
-  }, 2500);
+  }, 1500);
 }
 function showCompleteBtn() { completeBtn.style.display = 'block'; }
 function hideCompleteBtn() { clearTimeout(idleTimer); completeBtn.style.display = 'none'; }
