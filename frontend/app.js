@@ -3,58 +3,190 @@ const API_BASE   = 'http://localhost:8000';
 const SESSION_ID = crypto.randomUUID();
 
 // ─── DOM ────────────────────────────────────────────────
-const drawCanvas   = document.getElementById('drawing-canvas');
-const hintEyes     = document.getElementById('hint-eyes');
-const eyeLeft      = document.getElementById('eye-left');
-const eyeRight     = document.getElementById('eye-right');
-const drawCtx      = drawCanvas.getContext('2d');
-const colorHint    = document.getElementById('color-hint');
-const colorWrap    = document.getElementById('color-picker-wrap');
-const colorInput   = document.getElementById('color-input');
-const completeBtn  = document.getElementById('complete-btn');
-const chatOverlay  = document.getElementById('chat-overlay');
-const previewImg   = document.getElementById('preview-img');
-const chatMsgs     = document.getElementById('chat-messages');
-const chatInput    = document.getElementById('chat-input');
-const sendBtn      = document.getElementById('send-btn');
-const backBtn      = document.getElementById('back-btn');
-const cityReveal   = document.getElementById('city-reveal');
-const cityRevealImg    = document.getElementById('city-reveal-img');
-const cityRevealReason = document.getElementById('city-reveal-reason');
-const cityRevealName   = document.getElementById('city-reveal-name');
+const drawCanvas     = document.getElementById('drawing-canvas');
+const blinkCanvas    = document.getElementById('blink-canvas');
+const hintEyes       = document.getElementById('hint-eyes');
+const eyeLeft        = document.getElementById('eye-left');
+const eyeRight       = document.getElementById('eye-right');
+const drawCtx        = drawCanvas.getContext('2d');
+const blinkCtx       = blinkCanvas.getContext('2d');
+const colorHint      = document.getElementById('color-hint');
+const toolbar        = document.getElementById('toolbar');
+const colorInput     = document.getElementById('color-input');
+const colorBtn       = document.getElementById('color-btn');
+const undoBtn        = document.getElementById('undo-btn');
+const penBtn         = document.getElementById('pen-btn');
+const eraserBtn      = document.getElementById('eraser-btn');
+const penPopup       = document.getElementById('pen-popup');
+const eraserPopup    = document.getElementById('eraser-popup');
+const penSlider      = document.getElementById('pen-slider');
+const eraserSlider   = document.getElementById('eraser-slider');
+const completeBtn    = document.getElementById('complete-btn');
+const chatDialog     = document.getElementById('chat-dialog');
+const closeChatBtn   = document.getElementById('close-chat-btn');
+const chatMsgs       = document.getElementById('chat-messages');
+const chatInput      = document.getElementById('chat-input');
+const sendBtn        = document.getElementById('send-btn');
+const cityBtn        = document.getElementById('city-btn');
+const cityReveal     = document.getElementById('city-reveal');
+const cityRevealImg     = document.getElementById('city-reveal-img');
+const cityRevealReason  = document.getElementById('city-reveal-reason');
+const cityRevealName    = document.getElementById('city-reveal-name');
 const cityRevealWeather = document.getElementById('city-reveal-weather');
+
+// ─── CANVAS INIT (fixed resolution — never changes after this) ──
+// CSS scales the canvas element to fill the window; we lock the pixel
+// resolution once so coordinates never need re-normalising.
+drawCanvas.width   = window.innerWidth;
+drawCanvas.height  = window.innerHeight;
+blinkCanvas.width  = window.innerWidth;
+blinkCanvas.height = window.innerHeight;
+
+// Scale factor: converts CSS-pixel event coords → canvas-internal pixels.
+// Updated on every resize but does NOT touch canvas.width/height.
+function cssToCanvas() {
+  const r = drawCanvas.getBoundingClientRect();
+  return { sx: drawCanvas.width / r.width, sy: drawCanvas.height / r.height };
+}
 
 // ─── STATE ──────────────────────────────────────────────
 let phase        = 'color-select';
 let animHue      = Math.random() * 360;
 let currentHue   = animHue;
 let bgConfirmed  = false;
-let penColor     = '#ffffff';
+let penColor     = '#fff';
 let isDrawing    = false;
+let isErasing    = false;
 let lastPoint    = null;
-let lastMid      = null; // for smooth bezier drawing
+let lastMid      = null;
 let idleTimer    = null;
-let chatCount    = 0;
 let hasDrawn     = false;
 let drawingDataURL = null;
 let bgRafId      = null;
 let currentBgHex = null;
 
-// ─── CANVAS RESIZE ──────────────────────────────────────
-function resizeCanvases() {
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  const tmp = drawCanvas.width > 0
-    ? drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height)
-    : null;
-  drawCanvas.width        = w;
-  drawCanvas.height       = h;
-  drawCanvas.style.width  = w + 'px';
-  drawCanvas.style.height = h + 'px';
-  if (tmp) try { drawCtx.putImageData(tmp, 0, 0); } catch(_) {}
+// Chat session tracking
+let chatCount         = 0;
+let totalDialogOpens  = 0;
+let cityRevealed      = false;
+let userResponseCount = 0;  // user must reply ≥1 time before auto-reveal fires
+
+// ─── BEHAVIORAL TELEMETRY ───────────────────────────────
+const _bgStartTime = Date.now();
+let _lastStrokeEndTime  = null;
+let _strokeDrawMs       = 0;   // cumulative ms actively drawing
+let _strokeStartTime    = null;
+
+const telemetry = {
+  colorLockTime:    null,  // seconds: how long to confirm background
+  colorAdjustments: 0,     // # of color-picker changes after locking bg
+  penSizeChanges:   0,     // # of pen slider adjustments
+  drawDurationSec:  0,     // total seconds of active drawing
+  totalStrokes:     0,     // pen + eraser strokes
+  undoCount:        0,     // # of undo actions
+  eraserStrokes:    0,     // # of eraser strokes
+  drawingCoverage:  0,     // fraction of canvas with non-bg pixels (computed at open)
+  idleGaps:         0,     // pauses > 5s between strokes
+  sessionOpenCount: 0,     // how many times chat opened (filled at open time)
+};
+
+// ─── PEN / ERASER SIZE ──────────────────────────────────
+function calcBasePenWidth() { return Math.max(2, drawCanvas.width / 250); }
+let basePenWidth = calcBasePenWidth();
+
+const SIZE_MIN = 0.3, SIZE_MAX = 5.0;
+let penSizeRaw    = parseFloat(localStorage.getItem('penSizeRaw')    ?? '1.0');
+let eraserSizeRaw = parseFloat(localStorage.getItem('eraserSizeRaw') ?? '2.0');
+penSizeRaw    = Math.min(SIZE_MAX, Math.max(SIZE_MIN, penSizeRaw));
+eraserSizeRaw = Math.min(SIZE_MAX, Math.max(SIZE_MIN, eraserSizeRaw));
+
+function penWidth()    { return Math.max(1, basePenWidth * penSizeRaw); }
+function eraserWidth() { return Math.max(4, basePenWidth * eraserSizeRaw); }
+function rawToSlider(r) { return Math.round((r - SIZE_MIN) / (SIZE_MAX - SIZE_MIN) * 100); }
+function sliderToRaw(v) { return SIZE_MIN + (v / 100) * (SIZE_MAX - SIZE_MIN); }
+
+penSlider.value    = rawToSlider(penSizeRaw);
+eraserSlider.value = rawToSlider(eraserSizeRaw);
+
+// ─── STROKE HISTORY ─────────────────────────────────────
+// All coordinates are in canvas-internal pixels (stable — canvas never resizes).
+// Pen strokes: no color/width → always render at current penColor + penWidth().
+// Eraser strokes: width stored in canvas pixels.
+let strokes       = [];
+let currentStroke = null;
+const MAX_UNDO    = 10;
+const undoStack   = [];
+
+// Eye strokes baked after animation (absolute canvas coords, immune to undo)
+let eyeStrokes = [];
+
+// Eye animation progress
+let eyeDrawnLeftLen  = 0;
+let eyeDrawnRightLen = 0;
+
+// ─── RENDER ─────────────────────────────────────────────
+function setupLineCtx(color, width) {
+  drawCtx.globalCompositeOperation = 'source-over';
+  drawCtx.strokeStyle = color;
+  drawCtx.fillStyle   = color;
+  drawCtx.lineWidth   = width;
+  drawCtx.lineCap     = 'round';
+  drawCtx.lineJoin    = 'round';
 }
-resizeCanvases();
-window.addEventListener('resize', resizeCanvases);
+
+function renderStroke(s) {
+  if (s.type === 'eraser') {
+    drawCtx.globalCompositeOperation = 'destination-out';
+    drawCtx.strokeStyle = 'rgba(0,0,0,1)';
+    drawCtx.fillStyle   = 'rgba(0,0,0,1)';
+    drawCtx.lineWidth   = s.width;
+    drawCtx.lineCap = 'round'; drawCtx.lineJoin = 'round';
+  } else {
+    setupLineCtx(penColor, penWidth());
+  }
+  const pts = s.points;
+  if (!pts || pts.length === 0) return;
+  if (pts.length === 1) {
+    drawCtx.beginPath();
+    drawCtx.arc(pts[0].x, pts[0].y, drawCtx.lineWidth / 2, 0, Math.PI * 2);
+    drawCtx.fill();
+    drawCtx.globalCompositeOperation = 'source-over';
+    return;
+  }
+  drawCtx.beginPath();
+  drawCtx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length - 1; i++) {
+    const mid = { x: (pts[i].x + pts[i+1].x) / 2, y: (pts[i].y + pts[i+1].y) / 2 };
+    drawCtx.quadraticCurveTo(pts[i].x, pts[i].y, mid.x, mid.y);
+  }
+  drawCtx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+  drawCtx.stroke();
+  drawCtx.globalCompositeOperation = 'source-over';
+}
+
+function redrawAll() {
+  drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  // Eye animation in progress — draw directly from SVG (no CSS transform active during anim)
+  if (eyeDrawnLeftLen > 0 || eyeDrawnRightLen > 0) {
+    setupLineCtx(penColor, penWidth());
+    drawEyeFull(eyeLeft,  eyeDrawnLeftLen);
+    drawEyeFull(eyeRight, eyeDrawnRightLen);
+  }
+  // Baked eyes + user strokes — all in stable canvas-internal coords
+  for (const s of [...eyeStrokes, ...strokes]) renderStroke(s);
+  drawCtx.globalCompositeOperation = 'source-over';
+}
+
+// ─── WINDOW RESIZE ──────────────────────────────────────
+// Canvas resolution is FIXED. Only CSS scaling changes on resize.
+// basePenWidth recalculates so pen/eraser feel the same relative to window.
+window.addEventListener('resize', () => {
+  stopHintAnimation();
+  basePenWidth = calcBasePenWidth();
+  closeAllPopups();
+  // Redraw to re-render with updated penWidth (size slider feel scales with window)
+  redrawAll();
+});
 
 // ─── COLOUR UTILITIES ───────────────────────────────────
 function hslToRgb(h, s, l) {
@@ -64,41 +196,39 @@ function hslToRgb(h, s, l) {
     const k = (n + h / 30) % 12;
     return l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
   };
-  return [f(0) * 255, f(8) * 255, f(4) * 255];
+  return [f(0)*255, f(8)*255, f(4)*255];
 }
-
 function hexToRgb(hex) {
-  return [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16),
-  ];
+  return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
 }
-
 function getLuminance(r, g, b) {
-  return [r, g, b].reduce((sum, c, i) => {
-    const v = c / 255;
-    const lin = v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-    return sum + lin * [0.2126, 0.7152, 0.0722][i];
+  return [r,g,b].reduce((s,c,i) => {
+    const v = c/255, lin = v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
+    return s + lin * [0.2126, 0.7152, 0.0722][i];
   }, 0);
 }
 
 function updatePenFromRgb(r, g, b) {
-  penColor = getLuminance(r, g, b) > 0.25
-    ? 'rgba(0,0,0,0.85)'
-    : 'rgba(255,255,255,0.85)';
-  eyeLeft.style.stroke  = penColor;
-  eyeRight.style.stroke = penColor;
+  const isDark   = getLuminance(r,g,b) <= 0.25;
+  const newColor = isDark ? '#fff' : '#000';
+
+  document.body.style.setProperty('--pen-color',        newColor);
+  document.body.style.setProperty('--bubble-bg',        isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)');
+  document.body.style.setProperty('--bubble-bg-strong', isDark ? 'rgba(255,255,255,0.24)' : 'rgba(0,0,0,0.18)');
+  document.body.style.setProperty('--pen-color-faint',  isDark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.22)');
+
+  if (newColor !== penColor) {
+    penColor = newColor;
+    if (phase === 'drawing') redrawAll();
+  }
 }
 
 // ─── BACKGROUND ANIMATION ───────────────────────────────
 function applyHueBg(h) {
   const h2 = (h + 55) % 360;
-  document.body.style.background =
-    `linear-gradient(135deg, hsl(${h},65%,50%), hsl(${h2},65%,44%))`;
+  document.body.style.background = `linear-gradient(135deg, hsl(${h},65%,50%), hsl(${h2},65%,44%))`;
   updatePenFromRgb(...hslToRgb(h, 65, 50));
 }
-
 function startBgAnimation() {
   function tick() {
     if (bgConfirmed) return;
@@ -115,11 +245,12 @@ startBgAnimation();
 document.body.addEventListener('click', e => {
   if (phase !== 'color-select') return;
   bgConfirmed = true;
+  telemetry.colorLockTime = Math.round((Date.now() - _bgStartTime) / 100) / 10; // 1 decimal
   cancelAnimationFrame(bgRafId);
   phase = 'drawing';
   colorHint.style.opacity = '0';
   setTimeout(() => { colorHint.style.display = 'none'; }, 400);
-  colorWrap.style.display = 'block';
+  toolbar.style.display = 'flex';
   setTimeout(startHintAnimation, 350);
 });
 
@@ -127,101 +258,342 @@ colorInput.addEventListener('input', e => {
   currentBgHex = e.target.value;
   document.body.style.background = currentBgHex;
   updatePenFromRgb(...hexToRgb(currentBgHex));
+  if (phase === 'drawing') telemetry.colorAdjustments++;
 });
 
-// ─── HINT ANIMATION (SVG eye paths) ─────────────────────
-let cachedPenWidth = 2;
+// ─── EYE HINT ───────────────────────────────────────────
+let eyeAnimId    = null;
+let eyeAnimFrame = 0;
+const EYE_FRAMES = 40;
+const EYE_GAP    = 5;
+
+// Convert SVG-space point → canvas-internal pixels, accounting for CSS scaling.
+function svgPtToCanvas(pt) {
+  const sp = hintEyes.createSVGPoint();
+  sp.x = pt.x; sp.y = pt.y;
+  const vp   = sp.matrixTransform(hintEyes.getScreenCTM()); // viewport coords
+  const rect = drawCanvas.getBoundingClientRect();
+  return {
+    x: (vp.x - rect.left) * (drawCanvas.width  / rect.width),
+    y: (vp.y - rect.top)  * (drawCanvas.height / rect.height),
+  };
+}
+
+function drawEyeFull(pathEl, totalLen) {
+  if (totalLen <= 0) return;
+  const samples = Math.ceil(totalLen / 3);
+  const step    = totalLen / samples;
+  drawCtx.beginPath();
+  const p0 = svgPtToCanvas(pathEl.getPointAtLength(0));
+  drawCtx.moveTo(p0.x, p0.y);
+  for (let i = 1; i <= samples; i++) {
+    const p = svgPtToCanvas(pathEl.getPointAtLength(Math.min(i * step, totalLen)));
+    drawCtx.lineTo(p.x, p.y);
+  }
+  drawCtx.stroke();
+}
+
+// Bake a completed eye path into absolute canvas-internal coords
+function bakeEyeStroke(pathEl, totalLen) {
+  if (totalLen <= 0) return null;
+  const samples = Math.ceil(totalLen / 3);
+  const step    = totalLen / samples;
+  const points  = [];
+  for (let i = 0; i <= samples; i++) {
+    points.push(svgPtToCanvas(pathEl.getPointAtLength(Math.min(i * step, totalLen))));
+  }
+  return { type: 'pen', points };
+}
+
+function drawPathSegment(pathEl, fromLen, toLen) {
+  if (toLen - fromLen < 0.5) return;
+  const samples = Math.ceil((toLen - fromLen) / 3);
+  const step    = (toLen - fromLen) / samples;
+  drawCtx.beginPath();
+  const p0 = svgPtToCanvas(pathEl.getPointAtLength(fromLen));
+  drawCtx.moveTo(p0.x, p0.y);
+  for (let i = 1; i <= samples; i++) {
+    const p = svgPtToCanvas(pathEl.getPointAtLength(fromLen + i * step));
+    drawCtx.lineTo(p.x, p.y);
+  }
+  drawCtx.stroke();
+}
+
+function animateEyeOnCanvas() {
+  const leftLen     = eyeLeft.getTotalLength();
+  const rightLen    = eyeRight.getTotalLength();
+  const rightStart  = EYE_FRAMES + EYE_GAP;
+  const totalFrames = rightStart + EYE_FRAMES;
+
+  setupLineCtx(penColor, penWidth());
+
+  if (eyeAnimFrame <= EYE_FRAMES) {
+    const newLen = leftLen * (eyeAnimFrame / EYE_FRAMES);
+    drawPathSegment(eyeLeft, eyeDrawnLeftLen, newLen);
+    eyeDrawnLeftLen = newLen;
+  }
+  if (eyeAnimFrame >= rightStart) {
+    const rightFrame = eyeAnimFrame - rightStart;
+    const newLen = rightLen * (rightFrame / EYE_FRAMES);
+    drawPathSegment(eyeRight, eyeDrawnRightLen, newLen);
+    eyeDrawnRightLen = newLen;
+  }
+
+  if (eyeAnimFrame < totalFrames) {
+    eyeAnimFrame++;
+    eyeAnimId = requestAnimationFrame(animateEyeOnCanvas);
+  } else {
+    eyeAnimId = null;
+    // Bake eye paths into canvas-internal strokes (stable across CSS resizes)
+    const ls = bakeEyeStroke(eyeLeft,  eyeDrawnLeftLen);
+    const rs = bakeEyeStroke(eyeRight, eyeDrawnRightLen);
+    if (ls) eyeStrokes.push(ls);
+    if (rs) eyeStrokes.push(rs);
+    eyeDrawnLeftLen = 0; eyeDrawnRightLen = 0;
+    eyeCenters = computeEyeCenters();
+    scheduleBlink();
+  }
+}
 
 function startHintAnimation() {
-  hintEyes.style.display = 'block';
+  eyeAnimFrame = 0; eyeDrawnLeftLen = 0; eyeDrawnRightLen = 0;
+  eyeStrokes = [];
+  eyeAnimId = requestAnimationFrame(animateEyeOnCanvas);
+}
 
-  // Measure actual rendered SVG width now that it's visible, cache for canvas
-  const rect = hintEyes.getBoundingClientRect();
-  const strokeSVG = parseFloat(
-    getComputedStyle(hintEyes).getPropertyValue('--eyes-stroke-width').trim()
-  ) || 15.82;
-  cachedPenWidth = strokeSVG * (rect.width / 205); // 205 = viewBox width units
+function stopHintAnimation() {
+  if (eyeAnimId) {
+    cancelAnimationFrame(eyeAnimId); eyeAnimId = null;
+    // Bake whatever was drawn before stop
+    if (eyeDrawnLeftLen > 0 || eyeDrawnRightLen > 0) {
+      const ls = bakeEyeStroke(eyeLeft,  eyeDrawnLeftLen);
+      const rs = bakeEyeStroke(eyeRight, eyeDrawnRightLen);
+      if (ls) eyeStrokes.push(ls);
+      if (rs) eyeStrokes.push(rs);
+      eyeDrawnLeftLen = 0; eyeDrawnRightLen = 0;
+    }
+  }
+}
 
-  // Set dasharray from actual path length so animation draws fully
-  [eyeLeft, eyeRight].forEach(el => {
-    const len = Math.ceil(el.getTotalLength()) + 2;
-    el.style.strokeDasharray  = len;
-    el.style.strokeDashoffset = len;
-    // Restart animation via reflow trick
-    el.style.animation = 'none';
-    void el.offsetWidth;
-    el.style.animation = '';
+// ─── BLINK ──────────────────────────────────────────────
+let blinkTimer = null;
+let eyeCenters = null;
+
+function computeEyeCenters() {
+  // Derive centers from baked strokes (canvas-internal coords, resize-safe)
+  if (eyeStrokes.length >= 2) {
+    const result = {};
+    ['left', 'right'].forEach((side, i) => {
+      const s = eyeStrokes[i];
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const p of s.points) {
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+      }
+      result[side] = { x: (minX+maxX)/2, y: (minY+maxY)/2, r: (maxX-minX)/2 };
+    });
+    return result;
+  }
+  // Fallback: query SVG (only used if baked strokes not yet available)
+  function bounds(pathEl) {
+    const len = pathEl.getTotalLength();
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i <= 20; i++) {
+      const p = svgPtToCanvas(pathEl.getPointAtLength(len * i / 20));
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+    return { x: (minX+maxX)/2, y: (minY+maxY)/2, r: (maxX-minX)/2 };
+  }
+  return { left: bounds(eyeLeft), right: bounds(eyeRight) };
+}
+
+function doBlink() {
+  if (hasDrawn || phase !== 'drawing' || !eyeCenters) return;
+  blinkCtx.clearRect(0, 0, blinkCanvas.width, blinkCanvas.height);
+  blinkCtx.strokeStyle = penColor;
+  blinkCtx.lineWidth   = penWidth() * 2.5;
+  blinkCtx.lineCap     = 'round';
+  ['left', 'right'].forEach(side => {
+    const { x, y, r } = eyeCenters[side];
+    blinkCtx.beginPath();
+    blinkCtx.moveTo(x - r, y);
+    blinkCtx.quadraticCurveTo(x, y - r * 0.4, x + r, y);
+    blinkCtx.stroke();
   });
+  setTimeout(() => {
+    blinkCtx.clearRect(0, 0, blinkCanvas.width, blinkCanvas.height);
+    scheduleBlink();
+  }, 120);
 }
 
-// Hide eyes entirely (used when entering chat)
-function hideHint() {
-  hintEyes.style.display = 'none';
-  [eyeLeft, eyeRight].forEach(el => { el.style.animation = 'none'; });
+function scheduleBlink() {
+  if (hasDrawn || phase !== 'drawing') return;
+  blinkTimer = setTimeout(doBlink, 3000 + Math.random() * 3000);
 }
+
+function stopBlink() {
+  clearTimeout(blinkTimer); blinkTimer = null;
+  blinkCtx.clearRect(0, 0, blinkCanvas.width, blinkCanvas.height);
+}
+
+// ─── TOOLBAR ────────────────────────────────────────────
+function closeAllPopups() {
+  penPopup.style.display = 'none';
+  eraserPopup.style.display = 'none';
+}
+
+function positionPopup(popup, btn) {
+  const rect = btn.getBoundingClientRect();
+  const isLandscape = window.innerWidth >= window.innerHeight;
+  if (isLandscape) {
+    popup.style.top    = Math.round(rect.top + rect.height / 2 - 18) + 'px';
+    popup.style.left   = Math.round(rect.left - 172) + 'px';
+    popup.style.bottom = 'auto';
+  } else {
+    popup.style.bottom = Math.round(window.innerHeight - rect.top + 12) + 'px';
+    popup.style.left   = Math.round(rect.left + rect.width / 2 - 80) + 'px';
+    popup.style.top    = 'auto';
+  }
+}
+
+function togglePopup(popup, btn) {
+  const open = popup.style.display === 'flex';
+  closeAllPopups();
+  if (!open) { popup.style.display = 'flex'; positionPopup(popup, btn); }
+}
+
+colorBtn.addEventListener('click', e => { e.stopPropagation(); closeAllPopups(); });
+undoBtn.addEventListener('click',  e => { e.stopPropagation(); closeAllPopups(); undo(); });
+
+penBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  isErasing = false;
+  eraserBtn.classList.remove('active'); penBtn.classList.add('active');
+  togglePopup(penPopup, penBtn);
+});
+
+eraserBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  isErasing = true;
+  penBtn.classList.remove('active'); eraserBtn.classList.add('active');
+  togglePopup(eraserPopup, eraserBtn);
+});
+
+document.addEventListener('click', () => closeAllPopups());
+penPopup.addEventListener('click',    e => e.stopPropagation());
+eraserPopup.addEventListener('click', e => e.stopPropagation());
+
+// ─── SIZE SLIDERS ───────────────────────────────────────
+penSlider.addEventListener('input', () => {
+  penSizeRaw = sliderToRaw(parseInt(penSlider.value));
+  localStorage.setItem('penSizeRaw', penSizeRaw);
+  telemetry.penSizeChanges++;
+  redrawAll();
+});
+
+eraserSlider.addEventListener('input', () => {
+  eraserSizeRaw = sliderToRaw(parseInt(eraserSlider.value));
+  localStorage.setItem('eraserSizeRaw', eraserSizeRaw);
+});
+
+// ─── UNDO ───────────────────────────────────────────────
+function saveUndo() {
+  undoStack.push(strokes.map(s => ({ ...s, points: [...s.points] })));
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+}
+function undo() {
+  if (!undoStack.length) return;
+  strokes = undoStack.pop();
+  telemetry.undoCount++;
+  redrawAll();
+}
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
+});
 
 // ─── DRAWING ────────────────────────────────────────────
+// getPos converts CSS-pixel event coords to canvas-internal pixels
 function getPos(e) {
+  const { sx, sy } = cssToCanvas();
   if (e.touches && e.touches.length > 0) {
     const rect = drawCanvas.getBoundingClientRect();
     return {
-      x: e.touches[0].clientX - rect.left,
-      y: e.touches[0].clientY - rect.top,
+      x: (e.touches[0].clientX - rect.left) * sx,
+      y: (e.touches[0].clientY - rect.top)  * sy,
     };
   }
-  return { x: e.offsetX, y: e.offsetY };
-}
-
-function setupCtx() {
-  drawCtx.strokeStyle = penColor;
-  drawCtx.fillStyle   = penColor;
-  drawCtx.lineWidth   = cachedPenWidth;
-  drawCtx.lineCap     = 'round';
-  drawCtx.lineJoin    = 'round';
+  return { x: e.offsetX * sx, y: e.offsetY * sy };
 }
 
 function pointerDown(e) {
   if (phase !== 'drawing') return;
-  // Don't touch hint — let eyes stay visible while drawing
-  hideCompleteBtn();
-  isDrawing = true;
-  lastMid   = null;
-  lastPoint = getPos(e);
-  setupCtx();
-  // Draw a dot on tap/click
+  closeAllPopups(); stopBlink(); stopHintAnimation();
+  saveUndo(); hideCompleteBtn();
+
+  // Telemetry: detect idle gap > 5s between strokes
+  if (_lastStrokeEndTime && (Date.now() - _lastStrokeEndTime) > 5000) {
+    telemetry.idleGaps++;
+  }
+  _strokeStartTime = Date.now();
+
+  const pos = getPos(e);
+  currentStroke = {
+    type: isErasing ? 'eraser' : 'pen',
+    points: [{ x: pos.x, y: pos.y }],
+    width: isErasing ? eraserWidth() : 0,
+  };
+
+  const w = isErasing ? eraserWidth() : penWidth();
+  drawCtx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
+  drawCtx.fillStyle = isErasing ? 'rgba(0,0,0,1)' : penColor;
+  drawCtx.lineWidth = w; drawCtx.lineCap = 'round';
   drawCtx.beginPath();
-  drawCtx.arc(lastPoint.x, lastPoint.y, cachedPenWidth / 2, 0, Math.PI * 2);
+  drawCtx.arc(pos.x, pos.y, w / 2, 0, Math.PI * 2);
   drawCtx.fill();
+  drawCtx.globalCompositeOperation = 'source-over';
+
+  isDrawing = true; lastPoint = pos; lastMid = null;
   e.preventDefault();
 }
 
 function pointerMove(e) {
   if (!isDrawing || phase !== 'drawing') return;
   const cur = getPos(e);
-  const mid = { x: (lastPoint.x + cur.x) / 2, y: (lastPoint.y + cur.y) / 2 };
+  currentStroke.points.push({ x: cur.x, y: cur.y });
 
-  setupCtx();
+  const mid = { x: (lastPoint.x + cur.x) / 2, y: (lastPoint.y + cur.y) / 2 };
+  const w   = isErasing ? eraserWidth() : penWidth();
+
+  drawCtx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
+  drawCtx.strokeStyle = isErasing ? 'rgba(0,0,0,1)' : penColor;
+  drawCtx.lineWidth = w; drawCtx.lineCap = 'round'; drawCtx.lineJoin = 'round';
   drawCtx.beginPath();
-  // Quadratic bezier from lastMid (or lastPoint) through lastPoint to mid → smooth
-  if (lastMid) {
-    drawCtx.moveTo(lastMid.x, lastMid.y);
-  } else {
-    drawCtx.moveTo(lastPoint.x, lastPoint.y);
-  }
+  drawCtx.moveTo(lastMid ? lastMid.x : lastPoint.x, lastMid ? lastMid.y : lastPoint.y);
   drawCtx.quadraticCurveTo(lastPoint.x, lastPoint.y, mid.x, mid.y);
   drawCtx.stroke();
+  drawCtx.globalCompositeOperation = 'source-over';
 
-  lastMid   = mid;
-  lastPoint = cur;
+  lastMid = mid; lastPoint = cur;
   e.preventDefault();
 }
 
 function pointerUp(e) {
   if (!isDrawing) return;
-  isDrawing = false;
-  lastPoint = null;
-  lastMid   = null;
-  hasDrawn  = true;
+  if (currentStroke) { strokes.push(currentStroke); currentStroke = null; }
+  drawCtx.globalCompositeOperation = 'source-over';
+  isDrawing = false; lastPoint = null; lastMid = null;
+  hasDrawn = true;
+
+  // Telemetry: accumulate drawing time + stroke counts
+  if (_strokeStartTime) {
+    _strokeDrawMs += Date.now() - _strokeStartTime;
+    _strokeStartTime = null;
+  }
+  _lastStrokeEndTime = Date.now();
+  telemetry.totalStrokes++;
+  if (isErasing) telemetry.eraserStrokes++;
+
   resetIdleTimer();
   e.preventDefault();
 }
@@ -241,129 +613,191 @@ function resetIdleTimer() {
     if (phase === 'drawing' && hasDrawn) showCompleteBtn();
   }, 2500);
 }
+function showCompleteBtn() { completeBtn.style.display = 'block'; }
+function hideCompleteBtn() { clearTimeout(idleTimer); completeBtn.style.display = 'none'; }
 
-function showCompleteBtn() {
-  completeBtn.style.display = 'block';
-}
-
-function hideCompleteBtn() {
-  clearTimeout(idleTimer);
-  completeBtn.style.display = 'none';
-}
-
-// ─── COMPLETE ───────────────────────────────────────────
 completeBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  clearTimeout(idleTimer);
-  captureAndStartChat();
+  e.stopPropagation(); clearTimeout(idleTimer); openChat();
 });
 
-function drawBgOnCanvas(ctx, w, h) {
+// ─── OPEN CHAT ──────────────────────────────────────────
+function captureMergedCanvas() {
+  const merged = document.createElement('canvas');
+  merged.width = drawCanvas.width; merged.height = drawCanvas.height;
+  const mCtx = merged.getContext('2d');
   if (currentBgHex) {
-    ctx.fillStyle = currentBgHex;
-    ctx.fillRect(0, 0, w, h);
+    mCtx.fillStyle = currentBgHex; mCtx.fillRect(0, 0, merged.width, merged.height);
   } else {
-    const h2   = (currentHue + 55) % 360;
-    const grad = ctx.createLinearGradient(0, 0, w, h);
+    const h2 = (currentHue + 55) % 360;
+    const grad = mCtx.createLinearGradient(0, 0, merged.width, merged.height);
     grad.addColorStop(0, `hsl(${currentHue},65%,50%)`);
     grad.addColorStop(1, `hsl(${h2},65%,44%)`);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
+    mCtx.fillStyle = grad; mCtx.fillRect(0, 0, merged.width, merged.height);
   }
+  mCtx.drawImage(drawCanvas, 0, 0);
+  return merged.toDataURL('image/jpeg', 0.85);
 }
 
-async function captureAndStartChat() {
+// Estimate fraction of canvas covered by non-transparent pixels (sampled for speed)
+function computeDrawingCoverage() {
+  try {
+    const W = drawCanvas.width, H = drawCanvas.height;
+    const step = 8; // sample every 8th pixel
+    const data = drawCtx.getImageData(0, 0, W, H).data;
+    let covered = 0, total = 0;
+    for (let y = 0; y < H; y += step) {
+      for (let x = 0; x < W; x += step) {
+        const alpha = data[(y * W + x) * 4 + 3];
+        if (alpha > 10) covered++;
+        total++;
+      }
+    }
+    return Math.round((covered / total) * 100) / 100;
+  } catch { return 0; }
+}
+
+async function openChat() {
+  if (cityRevealed) return;
   phase = 'chat';
-  hideHint();
+  totalDialogOpens++;
+  chatCount = 0;
 
-  const merged = document.createElement('canvas');
-  merged.width  = drawCanvas.width;
-  merged.height = drawCanvas.height;
-  const mCtx = merged.getContext('2d');
-  drawBgOnCanvas(mCtx, merged.width, merged.height);
-  mCtx.drawImage(drawCanvas, 0, 0);
-  drawingDataURL = merged.toDataURL('image/jpeg', 0.85);
+  stopBlink(); stopHintAnimation(); hideCompleteBtn(); closeAllPopups();
 
-  previewImg.src = drawingDataURL;
-  chatOverlay.style.display = 'flex';
-  completeBtn.style.display  = 'none';
+  drawingDataURL = captureMergedCanvas();
 
-  const typing = addMsg('ai', '...', true);
+  toolbar.style.display = 'none';
+  document.body.classList.add('chat-open');
+  requestAnimationFrame(() => chatDialog.classList.add('open'));
+
+  const initMsg = totalDialogOpens > 1
+    ? 'I updated my drawing — take a look at what I added.'
+    : 'analyze_drawing';
+
+  // Finalize telemetry snapshot on first open
+  const payload = { message: initMsg, session_id: SESSION_ID, image: drawingDataURL };
+  if (totalDialogOpens === 1) {
+    telemetry.drawDurationSec  = Math.round(_strokeDrawMs / 100) / 10;
+    telemetry.drawingCoverage  = computeDrawingCoverage();
+    telemetry.sessionOpenCount = totalDialogOpens;
+    // Derived ratios (rounded to 2dp)
+    const t = { ...telemetry };
+    t.undoRatio   = t.totalStrokes > 0 ? Math.round(t.undoCount   / t.totalStrokes * 100) / 100 : 0;
+    t.eraserRatio = t.totalStrokes > 0 ? Math.round(t.eraserStrokes / t.totalStrokes * 100) / 100 : 0;
+    delete t.undoCount; delete t.eraserStrokes; delete t.totalStrokes;
+    payload.telemetry = t;
+  }
+
+  const typing = addMsg('ai', '…', true);
   try {
     const res  = await fetch(`${API_BASE}/chat`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        message:    'analyze_drawing',
-        session_id: SESSION_ID,
-        image:      drawingDataURL,
-      }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
     typing.classList.remove('typing');
     typing.textContent = data.reply;
     chatCount++;
-    if (data.ready || chatCount >= 5) setTimeout(fetchCity, 600);
+    // Auto-reveal only after user has replied at least once
+    if ((data.ready || chatCount >= 4) && userResponseCount >= 1) {
+      setTimeout(fetchCity, 600);
+    }
   } catch (err) {
     typing.textContent = 'Could not reach the server.';
     console.error(err);
   }
 }
 
+// ─── CLOSE CHAT → BACK TO DRAWING ───────────────────────
+closeChatBtn.addEventListener('click', () => {
+  chatDialog.classList.remove('open');
+  document.body.classList.remove('chat-open');
+  phase = 'drawing';
+  toolbar.style.display = 'flex';
+  resetIdleTimer();
+});
+
 // ─── CHAT ───────────────────────────────────────────────
 async function sendChat() {
   const msg = chatInput.value.trim();
   if (!msg || phase !== 'chat') return;
   chatInput.value = '';
-
+  userResponseCount++;
+  cityBtn.classList.add('ready'); // light up city button after first reply
   addMsg('user', msg);
-  const typing = addMsg('ai', '...', true);
-
+  const typing = addMsg('ai', '…', true);
   try {
     const res  = await fetch(`${API_BASE}/chat`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ message: msg, session_id: SESSION_ID }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, session_id: SESSION_ID }),
     });
     const data = await res.json();
     typing.classList.remove('typing');
     typing.textContent = data.reply;
     chatCount++;
-    if (data.ready || chatCount >= 5) setTimeout(fetchCity, 600);
+    if ((data.ready || chatCount >= 4) && userResponseCount >= 1) {
+      setTimeout(fetchCity, 600);
+    }
   } catch (err) {
     typing.textContent = 'Error — is the backend running?';
     console.error(err);
   }
 }
 
-// ─── CITY RESULT ────────────────────────────────────────
+sendBtn.addEventListener('click', sendChat);
+chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+// City button — always visible, triggers reveal immediately using whatever AI knows so far
+cityBtn.addEventListener('click', () => {
+  if (cityRevealed) return;
+  fetchCity();
+});
+
+// ─── CITY REVEAL — rendered as a card inside chat ───────
 async function fetchCity() {
-  const typing = addMsg('ai', '...', true);
+  if (cityRevealed) return;
+  cityRevealed = true;
+
+  const typing = addMsg('ai', '…', true);
   try {
     const res  = await fetch(`${API_BASE}/city-result`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ message: 'reveal', session_id: SESSION_ID }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'reveal', session_id: SESSION_ID }),
     });
     const data = await res.json();
     typing.remove();
 
-    // Close chat dialog, show city reveal card
-    chatOverlay.style.display = 'none';
+    // Build city card as an AI chat bubble
+    const card = document.createElement('div');
+    card.className = 'msg ai city-card';
 
-    if (data.image)  cityRevealImg.src = data.image;
-    cityRevealReason.textContent = data.reason || '';
-    cityRevealName.textContent   =
-      (data.city || '') + (data.country ? `, ${data.country}` : '');
-    cityRevealWeather.textContent =
-      data.weather?.main
-        ? `🌡️ ${data.weather.main.temp}°C · ${data.weather.weather[0].description}`
-        : '';
+    const cityName = (data.city || 'Your city') + (data.country ? `, ${data.country}` : '');
+    const weatherStr = data.weather?.main
+      ? `🌡️ ${Math.round(data.weather.main.temp)}°C · ${data.weather.weather[0].description}`
+      : '';
 
-    cityReveal.classList.add('visible');
+    card.innerHTML = `
+      ${data.image ? `<div class="city-card-img-wrap"><img class="city-card-img" src="${data.image}" alt="${cityName}"></div>` : ''}
+      <div class="city-card-body">
+        <div class="city-card-name">${cityName}</div>
+        <div class="city-card-reason">${data.reason || ''}</div>
+        ${weatherStr ? `<div class="city-card-weather">${weatherStr}</div>` : ''}
+      </div>`;
+
+    chatMsgs.appendChild(card);
+    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+
+    // Disable input — conversation is done
+    chatInput.disabled = true;
+    sendBtn.disabled   = true;
+    cityBtn.disabled   = true;
+    chatInput.placeholder = 'Your city has been revealed ✦';
 
   } catch (err) {
-    typing.textContent = 'Could not load city result.';
+    const typing2 = document.querySelector('.msg.typing');
+    if (typing2) typing2.textContent = 'Could not load city result.';
+    else addMsg('ai', 'Could not load city result.');
+    cityRevealed = false; // allow retry
     console.error(err);
   }
 }
@@ -377,16 +811,3 @@ function addMsg(role, text, isTyping = false) {
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
   return div;
 }
-
-sendBtn.addEventListener('click', sendChat);
-chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
-
-// ─── BACK TO DRAWING ────────────────────────────────────
-backBtn.addEventListener('click', () => {
-  chatOverlay.style.display = 'none';
-  phase = 'drawing';
-  // Reset chat state so a fresh session starts next time
-  chatCount = 0;
-  chatMsgs.innerHTML = '';
-  // Idle timer restarts when user draws again
-});

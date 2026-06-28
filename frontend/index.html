@@ -10,6 +10,9 @@
   <!-- Drawing canvas (user draws here) -->
   <canvas id="drawing-canvas"></canvas>
 
+  <!-- Blink overlay canvas (sits above drawing, pointer-events:none) -->
+  <canvas id="blink-canvas"></canvas>
+
   <!-- Eye hint SVG overlay (phase 2, animates stroke-by-stroke) -->
   <svg id="hint-eyes"
        viewBox="100 305 205 90"
@@ -32,40 +35,60 @@
     <p>Tap to lock in your color</p>
   </div>
 
-  <!-- Color wheel picker (phase 2+, bottom-right) -->
-  <div id="color-picker-wrap">
-    <svg id="color-wheel" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-      <path d="M50 22 A28 28 0 0 1 64 25.75 L74 8.43 A48 48 0 0 0 50 2 Z" fill="#f5e020"/>
-      <path d="M64 25.75 A28 28 0 0 1 74.25 36 L91.57 26 A48 48 0 0 0 74 8.43 Z" fill="#9bc73b"/>
-      <path d="M74.25 36 A28 28 0 0 1 78 50 L98 50 A48 48 0 0 0 91.57 26 Z" fill="#3aab50"/>
-      <path d="M78 50 A28 28 0 0 1 74.25 64 L91.57 74 A48 48 0 0 0 98 50 Z" fill="#36a07a"/>
-      <path d="M74.25 64 A28 28 0 0 1 64 74.25 L74 91.57 A48 48 0 0 0 91.57 74 Z" fill="#3a87c0"/>
-      <path d="M64 74.25 A28 28 0 0 1 50 78 L50 98 A48 48 0 0 0 74 91.57 Z" fill="#3355a8"/>
-      <path d="M50 78 A28 28 0 0 1 36 74.25 L26 91.57 A48 48 0 0 0 50 98 Z" fill="#5c44b8"/>
-      <path d="M36 74.25 A28 28 0 0 1 25.75 64 L8.43 74 A48 48 0 0 0 26 91.57 Z" fill="#8b2faa"/>
-      <path d="M25.75 64 A28 28 0 0 1 22 50 L2 50 A48 48 0 0 0 8.43 74 Z" fill="#c4328a"/>
-      <path d="M22 50 A28 28 0 0 1 25.75 36 L8.43 26 A48 48 0 0 0 2 50 Z" fill="#d63a50"/>
-      <path d="M25.75 36 A28 28 0 0 1 36 25.75 L26 8.43 A48 48 0 0 0 8.43 26 Z" fill="#d43a28"/>
-      <path d="M36 25.75 A28 28 0 0 1 50 22 L50 2 A48 48 0 0 0 26 8.43 Z" fill="#e8842a"/>
-    </svg>
-    <input type="color" id="color-input" />
+  <!-- Drawing toolbar (phase 2+) — landscape: bottom-right col; portrait: bottom-center row -->
+  <div id="toolbar">
+    <!-- Color picker -->
+    <div class="tool-btn" id="color-btn" title="Color">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true">
+        <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+      </svg>
+      <input type="color" id="color-input" />
+    </div>
+    <!-- Undo -->
+    <button class="tool-btn" id="undo-btn" title="Undo">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true">
+        <path d="M12.5 8c-2.65 0-5.05 1-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>
+      </svg>
+    </button>
+    <!-- Pen (with size popup) -->
+    <button class="tool-btn" id="pen-btn" title="Pen">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true">
+        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+      </svg>
+    </button>
+    <!-- Eraser (with size popup) -->
+    <button class="tool-btn" id="eraser-btn" title="Eraser">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true">
+        <path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.78-.78 2.05 0 2.83L5.03 20H20v-2h-8.6l-2.06-2.06 7.07-7.07 2.83 2.83-4.24 4.24 1.42 1.41 4.24-4.24c.78-.78.78-2.05 0-2.83l-4.11-4.11c-.39-.39-.9-.59-1.41-.59z"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Pen size popup slider -->
+  <div id="pen-popup" class="size-popup">
+    <input type="range" id="pen-slider" min="0" max="100" />
+  </div>
+  <!-- Eraser size popup slider -->
+  <div id="eraser-popup" class="size-popup">
+    <input type="range" id="eraser-slider" min="0" max="100" />
   </div>
 
   <!-- Completed button (appears after 3s idle, only after drawing starts) -->
   <button id="complete-btn">Completed ✓</button>
 
-  <!-- Phase 3: chat overlay -->
-  <div id="chat-overlay">
-    <div id="drawing-preview">
-      <img id="preview-img" alt="your drawing" />
-      <button id="back-btn" title="Back to drawing">✕</button>
-    </div>
-    <div id="chat-panel">
-      <div id="chat-messages"></div>
-      <div id="chat-input-row">
-        <input id="chat-input" type="text" placeholder="Type here..." autocomplete="off" />
-        <button id="send-btn">→</button>
-      </div>
+  <!-- Phase 3: chat dialog — slides in from right (landscape) or bottom (portrait) -->
+  <!-- Canvas stays visible behind it, scaled down via body.chat-open class -->
+  <div id="chat-dialog">
+    <button id="close-chat-btn" title="Back to drawing">✕</button>
+    <div id="chat-messages"></div>
+    <div id="chat-input-row">
+      <button id="city-btn" title="Reveal my city">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+        </svg>
+      </button>
+      <input id="chat-input" type="text" placeholder="Type here…" autocomplete="off" />
+      <button id="send-btn">↑</button>
     </div>
   </div>
 

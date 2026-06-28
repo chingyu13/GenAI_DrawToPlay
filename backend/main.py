@@ -18,12 +18,13 @@ app.add_middleware(
 class MessageRequest(BaseModel):
     message:    str
     session_id: str
-    image:      Optional[str] = None  # base64 data URL, first message only
+    image:      Optional[str]  = None  # base64 data URL, first message only
+    telemetry:  Optional[dict] = None  # behavioral signals from frontend
 
 
 @app.post("/chat")
 async def chat_endpoint(req: MessageRequest):
-    result = chat(req.session_id, req.message, req.image)
+    result = chat(req.session_id, req.message, req.image, req.telemetry)
     return result
 
 
