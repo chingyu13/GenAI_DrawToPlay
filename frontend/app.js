@@ -117,9 +117,6 @@ let currentStroke = null;
 const MAX_UNDO    = 10;
 const undoStack   = [];
 
-// Eye strokes baked after animation (absolute canvas coords, immune to undo)
-let eyeStrokes = [];
-
 // Eye animation progress
 let eyeDrawnLeftLen  = 0;
 let eyeDrawnRightLen = 0;
@@ -172,8 +169,8 @@ function redrawAll() {
     drawEyeFull(eyeLeft,  eyeDrawnLeftLen);
     drawEyeFull(eyeRight, eyeDrawnRightLen);
   }
-  // Baked eyes + user strokes — all in stable canvas-internal coords
-  for (const s of [...eyeStrokes, ...strokes]) renderStroke(s);
+  // All strokes (eyes baked in as regular strokes)
+  for (const s of strokes) renderStroke(s);
   drawCtx.globalCompositeOperation = 'source-over';
 }
 
@@ -344,11 +341,12 @@ function animateEyeOnCanvas() {
     eyeAnimId = requestAnimationFrame(animateEyeOnCanvas);
   } else {
     eyeAnimId = null;
-    // Bake eye paths into canvas-internal strokes (stable across CSS resizes)
+    // Bake eye paths into strokes[] — treated as regular user strokes from here on
+    saveUndo(); // allow undoing the eye hint as a unit
     const ls = bakeEyeStroke(eyeLeft,  eyeDrawnLeftLen);
     const rs = bakeEyeStroke(eyeRight, eyeDrawnRightLen);
-    if (ls) eyeStrokes.push(ls);
-    if (rs) eyeStrokes.push(rs);
+    if (ls) strokes.push(ls);
+    if (rs) strokes.push(rs);
     eyeDrawnLeftLen = 0; eyeDrawnRightLen = 0;
     eyeCenters = computeEyeCenters();
     scheduleBlink();
@@ -357,19 +355,18 @@ function animateEyeOnCanvas() {
 
 function startHintAnimation() {
   eyeAnimFrame = 0; eyeDrawnLeftLen = 0; eyeDrawnRightLen = 0;
-  eyeStrokes = [];
   eyeAnimId = requestAnimationFrame(animateEyeOnCanvas);
 }
 
 function stopHintAnimation() {
   if (eyeAnimId) {
     cancelAnimationFrame(eyeAnimId); eyeAnimId = null;
-    // Bake whatever was drawn before stop
+    // Bake whatever was drawn before stop into strokes[] like a regular stroke
     if (eyeDrawnLeftLen > 0 || eyeDrawnRightLen > 0) {
       const ls = bakeEyeStroke(eyeLeft,  eyeDrawnLeftLen);
       const rs = bakeEyeStroke(eyeRight, eyeDrawnRightLen);
-      if (ls) eyeStrokes.push(ls);
-      if (rs) eyeStrokes.push(rs);
+      if (ls) strokes.push(ls);
+      if (rs) strokes.push(rs);
       eyeDrawnLeftLen = 0; eyeDrawnRightLen = 0;
     }
   }
@@ -380,21 +377,7 @@ let blinkTimer = null;
 let eyeCenters = null;
 
 function computeEyeCenters() {
-  // Derive centers from baked strokes (canvas-internal coords, resize-safe)
-  if (eyeStrokes.length >= 2) {
-    const result = {};
-    ['left', 'right'].forEach((side, i) => {
-      const s = eyeStrokes[i];
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (const p of s.points) {
-        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-        minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
-      }
-      result[side] = { x: (minX+maxX)/2, y: (minY+maxY)/2, r: (maxX-minX)/2 };
-    });
-    return result;
-  }
-  // Fallback: query SVG (only used if baked strokes not yet available)
+  // Derive blink center + radius from SVG path geometry
   function bounds(pathEl) {
     const len = pathEl.getTotalLength();
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -528,8 +511,10 @@ function getPos(e) {
 
 function pointerDown(e) {
   if (phase !== 'drawing') return;
-  closeAllPopups(); stopBlink(); stopHintAnimation();
-  saveUndo(); hideCompleteBtn();
+  closeAllPopups(); stopBlink();
+  saveUndo();          // snapshot before eye strokes (if mid-animation) land in strokes[]
+  stopHintAnimation(); // stop & bake any partial eye into strokes[]
+  hideCompleteBtn();
 
   // Telemetry: detect idle gap > 5s between strokes
   if (_lastStrokeEndTime && (Date.now() - _lastStrokeEndTime) > 5000) {
@@ -698,9 +683,13 @@ async function openChat() {
     typing.classList.remove('typing');
     typing.textContent = data.reply;
     chatCount++;
+    const bridgingPhrases = /on it|searching now|let me find|i'll find|give me a (second|moment)|let me pull|let me grab a.*track|grab a.*track|pulling it up/i;
+    const impliedReady = !data.ready && !data.playlist && bridgingPhrases.test(data.reply);
     // Auto-reveal only after user has replied at least once
-    if ((data.ready || chatCount >= 4) && userResponseCount >= 1) {
-      setTimeout(fetchCity, 600);
+    if (data.playlist && userResponseCount >= 1) {
+      setTimeout(fetchPlaylists, 600);
+    } else if ((data.ready || impliedReady || chatCount >= 4) && userResponseCount >= 1) {
+      setTimeout(fetchSong, 600);
     }
   } catch (err) {
     typing.textContent = 'Could not reach the server.';
@@ -735,8 +724,13 @@ async function sendChat() {
     typing.classList.remove('typing');
     typing.textContent = data.reply;
     chatCount++;
-    if ((data.ready || chatCount >= 4) && userResponseCount >= 1) {
-      setTimeout(fetchCity, 600);
+    // Detect if AI said bridging phrase but forgot READY:true (model reliability fallback)
+    const bridgingPhrases = /on it|searching now|let me find|i'll find|give me a (second|moment)|let me pull|let me grab a.*track|grab a.*track|pulling it up/i;
+    const impliedReady = !data.ready && !data.playlist && bridgingPhrases.test(data.reply);
+    if (data.playlist && userResponseCount >= 1) {
+      setTimeout(fetchPlaylists, 600);
+    } else if ((data.ready || impliedReady || chatCount >= 4) && userResponseCount >= 1) {
+      setTimeout(fetchSong, 600);
     }
   } catch (err) {
     typing.textContent = 'Error — is the backend running?';
@@ -745,59 +739,107 @@ async function sendChat() {
 }
 
 sendBtn.addEventListener('click', sendChat);
-chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+chatInput.addEventListener('keydown', e => {
+  // e.isComposing is true while IME (Chinese/Japanese/Korean) is composing —
+  // ignore Enter during composition so it only confirms the character, not sends
+  if (e.key === 'Enter' && !e.isComposing) sendChat();
+});
 
 // City button — always visible, triggers reveal immediately using whatever AI knows so far
 cityBtn.addEventListener('click', () => {
   if (cityRevealed) return;
-  fetchCity();
+  fetchSong();
 });
 
-// ─── CITY REVEAL — rendered as a card inside chat ───────
-async function fetchCity() {
+// ─── SONG REVEAL — rendered as a card inside chat ───────
+async function fetchSong() {
   if (cityRevealed) return;
   cityRevealed = true;
 
   const typing = addMsg('ai', '…', true);
   try {
-    const res  = await fetch(`${API_BASE}/city-result`, {
+    const res  = await fetch(`${API_BASE}/song-result`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'reveal', session_id: SESSION_ID }),
     });
     const data = await res.json();
     typing.remove();
 
-    // Build city card as an AI chat bubble
+    // Build song card as an AI chat bubble
     const card = document.createElement('div');
     card.className = 'msg ai city-card';
 
-    const cityName = (data.city || 'Your city') + (data.country ? `, ${data.country}` : '');
-    const weatherStr = data.weather?.main
-      ? `🌡️ ${Math.round(data.weather.main.temp)}°C · ${data.weather.weather[0].description}`
-      : '';
+    const trackLabel = `${data.song || 'Your song'}${data.artist ? ` · ${data.artist}` : ''}`;
 
+    const spotifyHref = data.spotify_url ? `href="${data.spotify_url}" target="_blank" rel="noopener"` : '';
     card.innerHTML = `
-      ${data.image ? `<div class="city-card-img-wrap"><img class="city-card-img" src="${data.image}" alt="${cityName}"></div>` : ''}
+      ${data.image ? `<a class="city-card-img-wrap" ${spotifyHref}><img class="city-card-img" src="${data.image}" alt="${trackLabel}"></a>` : ''}
       <div class="city-card-body">
-        <div class="city-card-name">${cityName}</div>
+        <div class="city-card-name">${data.song || ''}</div>
+        <div class="city-card-artist">${data.artist || ''}</div>
         <div class="city-card-reason">${data.reason || ''}</div>
-        ${weatherStr ? `<div class="city-card-weather">${weatherStr}</div>` : ''}
+        ${data.spotify_url ? `<a class="city-card-spotify" href="${data.spotify_url}" target="_blank" rel="noopener">▶ Open in Spotify</a>` : ''}
       </div>`;
 
     chatMsgs.appendChild(card);
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
 
-    // Disable input — conversation is done
-    chatInput.disabled = true;
-    sendBtn.disabled   = true;
-    cityBtn.disabled   = true;
-    chatInput.placeholder = 'Your city has been revealed ✦';
+    // Keep input alive — user can ask for another song
+    cityRevealed = false;  // allow re-trigger if AI outputs READY:true again
+    chatCount    = 0;      // reset so chatCount >= 4 fallback doesn't fire immediately
+    chatInput.placeholder = 'Want a different vibe? Tell me…';
 
   } catch (err) {
     const typing2 = document.querySelector('.msg.typing');
-    if (typing2) typing2.textContent = 'Could not load city result.';
-    else addMsg('ai', 'Could not load city result.');
+    if (typing2) typing2.textContent = 'Could not load song result.';
+    else addMsg('ai', 'Could not load song result.');
     cityRevealed = false; // allow retry
+    console.error(err);
+  }
+}
+
+// ─── PLAYLIST OPTIONS — 3 clickable cards inside chat ───
+async function fetchPlaylists() {
+  const typing = addMsg('ai', '…', true);
+  try {
+    const res  = await fetch(`${API_BASE}/playlist-result`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'playlist', session_id: SESSION_ID }),
+    });
+    const data = await res.json();
+    typing.remove();
+
+    if (!data.playlists?.length) {
+      addMsg('ai', 'Couldn\'t find playlists right now — try asking again?');
+      return;
+    }
+
+    // Label bubble
+    addMsg('ai', 'Here are 3 playlists — pick whichever vibe fits 🎵');
+
+    // 3 option cards
+    const container = document.createElement('div');
+    container.className = 'playlist-options';
+    data.playlists.forEach(pl => {
+      const card = document.createElement('div');
+      card.className = 'playlist-option';
+      card.innerHTML = `
+        ${pl.image ? `<img class="playlist-option-img" src="${pl.image}" alt="${pl.name}">` : ''}
+        <div class="playlist-option-body">
+          <div class="playlist-option-name">${pl.name}</div>
+          <div class="playlist-option-meta">${pl.tracks} songs · ${pl.owner}</div>
+        </div>`;
+      card.addEventListener('click', () => window.open(pl.spotify_url, '_blank'));
+      container.appendChild(card);
+    });
+    chatMsgs.appendChild(container);
+    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+
+    chatInput.placeholder = 'Want something different? Tell me…';
+  } catch (err) {
+    const t = document.querySelector('.msg.typing');
+    if (t) t.textContent = 'Could not load playlists.';
+    else addMsg('ai', 'Could not load playlists.');
     console.error(err);
   }
 }

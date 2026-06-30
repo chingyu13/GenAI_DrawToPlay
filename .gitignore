@@ -1,6 +1,9 @@
 # Environment variables
 .env
 
+# Local project notes (not for repo)
+project-details.md
+
 # Python
 __pycache__/
 *.pyc

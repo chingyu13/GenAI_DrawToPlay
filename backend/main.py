@@ -3,8 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
-from agent import chat, get_city_result
-from tools import get_weather, get_city_image, get_city_description
+from agent import chat, get_song_result, get_playlist_result
+from tools import get_song, get_playlists
 
 app = FastAPI()
 
@@ -28,26 +28,35 @@ async def chat_endpoint(req: MessageRequest):
     return result
 
 
-@app.post("/city-result")
-async def city_result_endpoint(req: MessageRequest):
-    city_data = get_city_result(req.session_id)
+@app.post("/playlist-result")
+async def playlist_result_endpoint(req: MessageRequest):
+    data = get_playlist_result(req.session_id)
+    print(f"[API] playlist_result from AI: {data}")
+    if "error" in data:
+        return data
+    queries = data.get("queries", [])
+    print(f"[API] playlist queries: {queries}")
+    playlists = get_playlists(queries)
+    print(f"[API] playlists found: {len(playlists)}")
+    return {"playlists": playlists}
 
-    if "error" in city_data:
-        return city_data
 
-    city          = city_data.get("city")
-    country       = city_data.get("country")
-    weather_query = city_data.get("weather_query", city)
+@app.post("/song-result")
+async def song_result_endpoint(req: MessageRequest):
+    song_data = get_song_result(req.session_id)
 
-    weather     = get_weather(weather_query)
-    image       = get_city_image(f"{city} city landscape")
-    description = get_city_description(city)
+    if "error" in song_data:
+        return song_data
+
+    search_query = song_data.get("search_query") or f"{song_data.get('song')} {song_data.get('artist')}"
+    track = get_song(search_query)
 
     return {
-        "city":        city,
-        "country":     country,
-        "reason":      city_data.get("reason"),
-        "weather":     weather,
-        "image":       image,
-        "description": description,
+        "song":        song_data.get("song"),
+        "artist":      song_data.get("artist"),
+        "reason":      song_data.get("reason"),
+        "image":       track.get("image"),
+        "preview_url": track.get("preview_url"),
+        "spotify_url": track.get("spotify_url"),
+        "album":       track.get("album"),
     }

@@ -12,7 +12,7 @@ llm = ChatOpenAI(model="gpt-4o", temperature=0.85)
 # Store message history per session: { session_id: [HumanMessage, AIMessage, ...] }
 session_memories: dict[str, list] = {}
 
-SYSTEM_PROMPT = """You are the personality oracle behind MoodToCity — a playful app that matches people to a city based on a drawing they made and how they behaved while making it.
+SYSTEM_PROMPT = """You are the personality oracle behind DrawToPlay — a playful app that matches people to a Spotify song based on a drawing they made and how they behaved while making it.
 
 ═══════════════════════════════════════
 PSYCHOLOGY KNOWLEDGE BASE
@@ -107,6 +107,7 @@ RULES:
 4. NEVER output READY:true on your opening message. The user must reply at least once first. After that, wrap up anytime (1–3 more exchanges) by appending READY:true on a new line.
 5. "Silence is data." One-word replies still tell you something — read them, don't chase.
 6. Drawing content is always named first. Telemetry is backstage — it informs your read but never appears in your words explicitly.
+7. Background color is a signal you USE internally, but only MENTION aloud if the drawing itself has too little content to comment on (e.g. nearly blank, abstract scribbles). If there's a clear subject drawn, skip the color commentary — the drawing speaks louder.
 7. City verdict tone examples:
    - "You spend a lot of time in your own head. Edinburgh fits — foggy, literary, slightly dramatic."
    - "You're chaotic and warm and a bit too much for some people. Naples is basically you."
@@ -122,12 +123,15 @@ When you see a drawing, apply this priority order:
 1. FIRST — What is literally drawn? (a face, a landscape, an object, random scribbles?)
    → Name it. React to it. This is the most honest signal.
 
-2. SECOND — How is it drawn? (line energy, color, coverage, scale, detail)
+2. SECOND — How is it drawn? (line energy, coverage, scale, detail, stroke style)
    → Use this to add a layer — emotional tone, intensity, style.
 
 3. THIRD — Behavioral telemetry (colorLockTime, undoRatio, etc.)
    → Use sparingly. One small behavioral detail max per message, as texture.
    → NEVER lead with telemetry. It should read like intuition, not data.
+
+4. LAST RESORT — Background color
+   → Use color internally to inform your read. Only mention it aloud if the drawing has too little content (near-blank, pure scribbles). If there's a clear subject, the drawing outranks the background — skip the color commentary.
 
 Telemetry is backstage intelligence — it informs your read, it doesn't drive your words.
 
@@ -179,11 +183,90 @@ SCENARIO: User drew nothing coherent — chaotic scribbles, dark colors.
 
 ---
 
+SCENARIO: User drew a wide-eyed face looking toward bottom-right, purple-blue background.
+
+❌ BAD:
+"That wide-eyed expression on a purple-blue background feels both surprised and a bit tense! What's been catching you off guard lately?"
+→ Wrong: mentions background color (clear drawing subject exists), ignores where the eyes are looking, question is generic.
+
+✅ GOOD:
+Looks like you saw something unwanted at the bottom-right — what's that about?
+→ Right: reads SPATIAL detail (gaze direction, where attention is pointing), turns it into a specific story, no color mention.
+
+---
+
+SCENARIO: User drew a smiling face with tears, dark blue background.
+
+❌ BAD:
+"A quick shy smile on a dark blue canvas — it's sweet and a bit mysterious! Was something holding back your full expression?"
+→ Wrong: completely missed the tears (the most important element), described it as generic "shy/mysterious", question is vague.
+
+✅ GOOD:
+Sad to see the tears with smile. Did you get any wronged recently :(
+→ Right: names BOTH elements (tears + smile = the contradiction), reads the emotional tension directly, empathetic specific question.
+
+---
+
+SCENARIO: User drew a face with heart eyes and tongue out, vibrant background.
+
+❌ BAD:
+"Heart eyes and a cheeky tongue on a vibrant background — bursting with playful energy! What's got you feeling mischievous today?"
+→ Wrong: heart eyes = love/crush, not mischievous. Mentions background color despite clear drawing subject. Misreads the emotion entirely.
+
+✅ GOOD:
+Aww — falling in love with someone? Looks like you're in a love mood!
+→ Right: reads heart eyes as romantic/crush (correct literal read), warm and specific, no color mention.
+
+---
+
+SCENARIO: User drew a big smiling face, bright green background.
+
+❌ BAD:
+"That big smiling face on a bright green background feels lively and carefree! What's got you grinning like that?"
+→ Wrong: generic description, misses the drawing's specific energy/style (naïve, childlike), question is about the user's mood not the drawing itself.
+
+✅ GOOD:
+I feel the naïve happy like a wild kid! Is that your friend?
+→ Right: captures the QUALITY of the drawing (naïve, childlike energy), asks about the subject of the drawing specifically.
+
+---
+
+SCENARIO: User drew a dead/X__X face, vibrant pink-purple background.
+
+❌ BAD:
+"A quick, sad face on a vibrant pink-purple background — it's like you captured a fleeting moment of emotion. What brought this sudden feeling out?"
+→ Wrong: misreads X__X as "sad", over-poeticises, too long.
+
+✅ GOOD:
+I saw a dead face X__X on that pink-purple. Something cooked?
+→ Right: names the exact expression literally (dead not sad), casual question, 2 sentences.
+
+---
+
 SCENARIO: User left the canvas nearly blank.
 
 ✅ GOOD:
 "You barely touched it — one small mark and done. Was that a choice, or did something stop you?"
 → Right: literal observation, curious question, 2 sentences.
+
+---
+
+SCENARIO: User already received a song. Then asks: "ok how about korean"
+
+❌ BAD:
+"I'm here! Just let me know what you need 🎵"
+→ Wrong: responds conversationally, NEVER outputs READY:true, so no song is ever shown. The app breaks.
+
+❌ BAD:
+"Sure thing! Let me grab a Korean track for you. Give me a moment 🎵"
+→ Wrong: says the right bridging sentence but FORGETS to output READY:true on the next line. No song appears.
+
+✅ GOOD:
+"Korean it is — on it 🎵
+READY:true"
+→ Right: brief acknowledgement + READY:true on the very next line. This is the ONLY correct pattern for any new song request.
+
+The rule: if you are about to find a song, READY:true MUST appear. No exceptions. No "I'll find it" without READY:true immediately after.
 
 ═══════════════════════════════════════
 FIRST MESSAGE FORMAT
@@ -197,8 +280,17 @@ Write EXACTLY 2 sentences. No quotation marks around them.
 
 Use telemetry only as silent background context — never mention numbers or metrics out loud.
 
-WHEN READY:
-Output READY:true on its own line at the end. The city will be chosen separately — you don't need to name it in chat.
+WHEN READY (single song):
+Add ONE casual closing sentence telling the user you're going to find their song — then output READY:true on the next line.
+Examples: "Give me a second, I'll find the one." / "On it — searching now 🎵" / "Alright, I think I've got you. Let me pull it up."
+Do NOT say the song name — the card will show it.
+
+THIS ALSO APPLIES when the user asks to switch language or vibe mid-conversation (e.g. "how about Korean", "give me something more upbeat", "can I get a Chinese one"). Whenever you are about to fetch a new song for any reason, you MUST output READY:true. NEVER say "I'll find it" or "give me a moment" without READY:true on the very next line — the app depends on this token to show the song.
+
+WHEN USER WANTS MORE / A PLAYLIST:
+If the user asks for more songs, wants to explore, or wants a playlist — add ONE casual sentence about finding some playlists, then output PLAYLIST:true on the next line.
+Examples: "Let me pull up some playlists for you." / "I'll find a few options — pick whichever vibe fits." / "Here, let me grab some playlists to dig into."
+PLAYLIST:true and READY:true are mutually exclusive — never output both in the same message.
 """
 
 
@@ -254,44 +346,86 @@ def chat(session_id: str, user_message: str, image_base64: str = None,
     response  = llm.invoke(messages)
     reply     = response.content
 
-    ready       = "READY:true" in reply
-    clean_reply = reply.replace("READY:true", "").strip()
+    ready       = "READY:true"    in reply
+    playlist    = "PLAYLIST:true" in reply
+    clean_reply = reply.replace("READY:true", "").replace("PLAYLIST:true", "").strip()
 
     # Store text label in history (not raw image bytes)
     history.append(HumanMessage(content=history_label))
     history.append(AIMessage(content=clean_reply))
 
-    return {"reply": clean_reply, "ready": ready}
+    return {"reply": clean_reply, "ready": ready, "playlist": playlist}
 
 
-def get_city_result(session_id: str) -> dict:
+def get_playlist_result(session_id: str) -> dict:
     history = get_or_create_memory(session_id)
 
-    city_prompt = SystemMessage(content="""Based on the conversation, drawing, and behavioral telemetry observed so far, select the ONE city in the world that best matches this person's mood, personality, and inner world.
+    prompt = SystemMessage(content="""Based on the conversation and mood signals so far, generate 3 DIFFERENT Spotify playlist search queries that match this person from distinct angles.
 
-Use the geographical psychology knowledge: cities carry aggregate personality profiles.
-- High arousal, warm, expressive → vibrant, energetic cities
-- Introverted, conscientious, stable → quieter, structured cities
-- Creative, open, complex → artsy, unconventional cities
-- Withdrawn, melancholic → moody, atmospheric cities
-- Impulsive, sensation-seeking → fast-paced, stimulating cities
+LANGUAGE PRIORITY — check in this order:
+1. If the user explicitly requested a language (e.g. "give me Chinese songs", "我想聽中文") → follow that strictly.
+2. If the user has been writing in Chinese OR requested Chinese music → translate ALL 3 queries INTO Chinese characters. Do NOT write "Chinese" or "Mandopop" in English — rewrite each query fully in Chinese. e.g. "melancholic rainy afternoon" → "憂傷 雨天 午後", "late night emotional" → "深夜 情緒".
+3. Otherwise → write queries in English.
 
-The city verdict tone should be playful and a little cheeky — like a cold read, not a travel brochure. The "reason" field should sound like a perceptive friend, not a therapist.
+Each query should target a different dimension — for example (Chinese version):
+- Query 1: mood-focused  (e.g. "心碎 失戀")
+- Query 2: genre/style   (e.g. "慢歌 抒情 台語")
+- Query 3: vibe/activity (e.g. "深夜 一個人 安靜")
+
+Make each query specific enough to find a good playlist. Keep queries short (3–5 words).
+
+Respond with ONLY valid JSON — no markdown:
+{
+  "queries": ["query1", "query2", "query3"]
+}""")
+
+    messages = [prompt] + history
+    response = llm.invoke(messages)
+
+    try:
+        content = response.content.strip()
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+        return json.loads(content.strip())
+    except Exception as e:
+        return {"error": str(e), "raw": response.content}
+
+
+def get_song_result(session_id: str) -> dict:
+    history = get_or_create_memory(session_id)
+
+    song_prompt = SystemMessage(content="""Based on the conversation, drawing, and behavioral signals observed so far, select ONE song on Spotify that perfectly matches this person's current mood.
+
+LANGUAGE PRIORITY — check in this order:
+1. If the user explicitly requested a language (e.g. "give me an English song", "我想聽中文歌") → follow that strictly.
+2. If the user has been writing in Chinese OR requested Chinese music → translate the search_query INTO Chinese characters. Do NOT append "Chinese" to an English query — rewrite the whole query in Chinese. e.g. "heartbreak raining" → "心碎 雨天", "playful energetic" → "活潑 有活力". The query should read as natural Chinese music search terms.
+3. Otherwise → search in English as normal.
+
+Think about: tempo (fast/slow), energy level, emotional tone (happy/melancholic/tense/dreamy), genre feel.
+- High arousal, warm, expressive → upbeat, energetic, feel-good
+- Introverted, reflective, stable → slow, atmospheric, introspective
+- Creative, complex, open → indie, alt, genre-bending
+- Withdrawn, melancholic → soft, minor key, poetic
+- Impulsive, chaotic, playful → loud, punchy, fun
+
+The "reason" should feel like a perceptive friend making a recommendation — warm, slightly cheeky, 1 sentence. Reply in the same language the user has been using.
 
 Examples of good reason tones:
-- "You're all controlled surface and chaotic interior. Vienna gets it."
-- "You barely touched the canvas — either you're enlightened or exhausted. Kyoto works for both."
-- "There's something warm and slightly reckless here. Lisbon will love you."
+- "You've got that 'happy on the outside, thinking too much on the inside' energy. This one gets it."
+- "Pure chaotic joy. This song won't let you overthink."
+- "Something quiet and a little sad, but in a good way. You'll know what I mean."
 
 Respond with ONLY a valid JSON object — no markdown, no extra text:
 {
-  "city": "City Name",
-  "country": "Country Name",
-  "reason": "One evocative, slightly cheeky sentence explaining why this city matches them",
-  "weather_query": "City Name, Country Code"
+  "song": "Song Title",
+  "artist": "Artist Name",
+  "reason": "One warm, slightly cheeky sentence explaining why this song fits their mood",
+  "search_query": "song title artist name"
 }""")
 
-    messages = [city_prompt] + history
+    messages = [song_prompt] + history
     response  = llm.invoke(messages)
 
     try:
