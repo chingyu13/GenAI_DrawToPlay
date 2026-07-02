@@ -280,6 +280,8 @@ Write EXACTLY 2 sentences. No quotation marks around them.
 
 Use telemetry only as silent background context — never mention numbers or metrics out loud.
 
+LANGUAGE: If telemetry includes `browserLanguage`, use that language for ALL your replies in this session — including the opening message. Examples: "zh-TW" or "zh-HK" → Traditional Chinese, "zh-CN" → Simplified Chinese, "ko" → Korean, "ja" → Japanese, "en" → English. If browserLanguage is absent or "en", default to English. Never mention that you detected their language.
+
 WHEN READY (single song):
 Add ONE casual closing sentence telling the user you're going to find their song — then output READY:true on the next line.
 Examples: "Give me a second, I'll find the one." / "On it — searching now 🎵" / "Alright, I think I've got you. Let me pull it up."
@@ -292,6 +294,24 @@ If the user asks for more songs, wants to explore, or wants a playlist — add O
 Examples: "Let me pull up some playlists for you." / "I'll find a few options — pick whichever vibe fits." / "Here, let me grab some playlists to dig into."
 PLAYLIST:true and READY:true are mutually exclusive — never output both in the same message.
 """
+
+
+def _parse_json_response(raw: str) -> dict:
+    """Robustly parse an LLM JSON reply: strip code fences, then fall back to
+    extracting the outermost {...} if the model added any surrounding text."""
+    content = raw.strip()
+    if content.startswith("```"):
+        content = content.split("```")[1]
+        if content.startswith("json"):
+            content = content[4:]
+        content = content.strip()
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        start, end = content.find("{"), content.rfind("}")
+        if start != -1 and end > start:
+            return json.loads(content[start:end + 1])
+        raise
 
 
 def get_or_create_memory(session_id: str) -> list:
@@ -383,12 +403,38 @@ Respond with ONLY valid JSON — no markdown:
     response = llm.invoke(messages)
 
     try:
-        content = response.content.strip()
-        if content.startswith("```"):
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
-        return json.loads(content.strip())
+        return _parse_json_response(response.content)
+    except Exception as e:
+        return {"error": str(e), "raw": response.content}
+
+
+def extract_session_features(session_id: str) -> dict:
+    """Post-session GPT-4o pass: extract keywords, style, likelihood, language from conversation."""
+    history = get_or_create_memory(session_id)
+
+    prompt = SystemMessage(content="""You are analyzing a completed session from DrawToPlay.
+Read the conversation history and extract the following as JSON.
+
+Respond with ONLY valid JSON — no markdown, no extra text:
+{
+  "ai_keywords": ["keyword1", "keyword2", "keyword3"],
+  "ai_style_description": "One sentence describing what the person drew and how they drew it.",
+  "user_like_likelihood": 7,
+  "language": "en"
+}
+
+Rules:
+- ai_keywords: 3–6 short mood/style words inferred from the drawing + conversation (e.g. ["melancholic", "rainy", "introspective"])
+- ai_style_description: describe the drawing content + emotional tone in one plain sentence
+- user_like_likelihood: 1–10 estimate of how much the user would like the recommended song, inferred from their responses (enthusiasm, engagement, requests)
+- language: ISO 639-1 code of the language the user wrote in ("zh" for Chinese, "en" for English, "ko" for Korean, etc.)
+""")
+
+    messages = [prompt] + history
+    response = llm.invoke(messages)
+
+    try:
+        return _parse_json_response(response.content)
     except Exception as e:
         return {"error": str(e), "raw": response.content}
 
@@ -429,11 +475,6 @@ Respond with ONLY a valid JSON object — no markdown, no extra text:
     response  = llm.invoke(messages)
 
     try:
-        content = response.content.strip()
-        if content.startswith("```"):
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
-        return json.loads(content.strip())
+        return _parse_json_response(response.content)
     except Exception as e:
         return {"error": str(e), "raw": response.content}

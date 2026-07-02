@@ -4,6 +4,9 @@
 # Local project notes (not for repo)
 project-details.md
 
+# Local analysis notebooks (contain DB credentials + user data)
+analysis/
+
 # Python
 __pycache__/
 *.pyc

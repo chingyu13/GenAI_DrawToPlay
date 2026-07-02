@@ -1,5 +1,5 @@
 // ─── CONFIG ─────────────────────────────────────────────
-const API_BASE   = 'http://localhost:8000';
+const API_BASE   = 'https://dr-85b3e9d1083e41b48364eeec2ef88e33.ecs.us-east-1.on.aws';
 const SESSION_ID = crypto.randomUUID();
 
 // ─── DOM ────────────────────────────────────────────────
@@ -71,6 +71,14 @@ let totalDialogOpens  = 0;
 let cityRevealed      = false;
 let userResponseCount = 0;  // user must reply ≥1 time before auto-reveal fires
 
+// Session save tracking
+let drawingPhaseStart    = null;  // timestamp when current drawing phase began
+let drawingAccumMs       = 0;     // cumulative ms spent drawing (across all drawing phases)
+let chatPhaseStart       = null;  // timestamp when current chat phase began
+let chatAccumMs          = 0;     // cumulative ms spent in chat (across all chat phases)
+let dbSessionId          = null;  // returned from /session-complete, used for /spotify-opened + /rate
+let lastSongData         = null;  // stores most recent song result for /session-complete payload
+
 // ─── BEHAVIORAL TELEMETRY ───────────────────────────────
 const _bgStartTime = Date.now();
 let _lastStrokeEndTime  = null;
@@ -88,10 +96,16 @@ const telemetry = {
   drawingCoverage:  0,     // fraction of canvas with non-bg pixels (computed at open)
   idleGaps:         0,     // pauses > 5s between strokes
   sessionOpenCount: 0,     // how many times chat opened (filled at open time)
+  browserLanguage:  navigator.language || null,  // e.g. "zh-TW", "en-US", "ko-KR"
 };
 
 // ─── PEN / ERASER SIZE ──────────────────────────────────
-function calcBasePenWidth() { return Math.max(2, drawCanvas.width / 250); }
+// Scale off the SHORTER screen dimension so phones get a comfortably wide
+// default (portrait width used to give ~2px — too thin). Floor raised to 4px.
+// Desktop stays roughly the same as before (e.g. 1440×900 → 5.6px).
+function calcBasePenWidth() {
+  return Math.max(4, Math.min(drawCanvas.width, drawCanvas.height) / 160);
+}
 let basePenWidth = calcBasePenWidth();
 
 const SIZE_MIN = 0.3, SIZE_MAX = 5.0;
@@ -110,7 +124,9 @@ eraserSlider.value = rawToSlider(eraserSizeRaw);
 
 // ─── STROKE HISTORY ─────────────────────────────────────
 // All coordinates are in canvas-internal pixels (stable — canvas never resizes).
-// Pen strokes: no color/width → always render at current penColor + penWidth().
+// Pen strokes: no color stored → always render at current penColor (flips
+// black/white with background). Width IS stored as sizeRaw (multiplier of
+// basePenWidth) so changing the slider doesn't resize strokes already drawn.
 // Eraser strokes: width stored in canvas pixels.
 let strokes       = [];
 let currentStroke = null;
@@ -139,7 +155,9 @@ function renderStroke(s) {
     drawCtx.lineWidth   = s.width;
     drawCtx.lineCap = 'round'; drawCtx.lineJoin = 'round';
   } else {
-    setupLineCtx(penColor, penWidth());
+    // Per-stroke width: old strokes without sizeRaw fall back to current size
+    const w = Math.max(1, basePenWidth * (s.sizeRaw ?? penSizeRaw));
+    setupLineCtx(penColor, w);
   }
   const pts = s.points;
   if (!pts || pts.length === 0) return;
@@ -245,6 +263,7 @@ document.body.addEventListener('click', e => {
   telemetry.colorLockTime = Math.round((Date.now() - _bgStartTime) / 100) / 10; // 1 decimal
   cancelAnimationFrame(bgRafId);
   phase = 'drawing';
+  drawingPhaseStart = Date.now(); // start drawing timer
   colorHint.style.opacity = '0';
   setTimeout(() => { colorHint.style.display = 'none'; }, 400);
   toolbar.style.display = 'flex';
@@ -299,7 +318,7 @@ function bakeEyeStroke(pathEl, totalLen) {
   for (let i = 0; i <= samples; i++) {
     points.push(svgPtToCanvas(pathEl.getPointAtLength(Math.min(i * step, totalLen))));
   }
-  return { type: 'pen', points };
+  return { type: 'pen', points, sizeRaw: penSizeRaw };
 }
 
 function drawPathSegment(pathEl, fromLen, toLen) {
@@ -472,7 +491,7 @@ penSlider.addEventListener('input', () => {
   penSizeRaw = sliderToRaw(parseInt(penSlider.value));
   localStorage.setItem('penSizeRaw', penSizeRaw);
   telemetry.penSizeChanges++;
-  redrawAll();
+  // No redrawAll(): width is stored per stroke — slider only affects new strokes
 });
 
 eraserSlider.addEventListener('input', () => {
@@ -527,6 +546,7 @@ function pointerDown(e) {
     type: isErasing ? 'eraser' : 'pen',
     points: [{ x: pos.x, y: pos.y }],
     width: isErasing ? eraserWidth() : 0,
+    sizeRaw: isErasing ? null : penSizeRaw,
   };
 
   const w = isErasing ? eraserWidth() : penWidth();
@@ -602,7 +622,8 @@ function showCompleteBtn() { completeBtn.style.display = 'block'; }
 function hideCompleteBtn() { clearTimeout(idleTimer); completeBtn.style.display = 'none'; }
 
 completeBtn.addEventListener('click', e => {
-  e.stopPropagation(); clearTimeout(idleTimer); openChat();
+  e.stopPropagation(); clearTimeout(idleTimer);
+  openChat();
 });
 
 // ─── OPEN CHAT ──────────────────────────────────────────
@@ -645,6 +666,9 @@ async function openChat() {
   if (cityRevealed) return;
   phase = 'chat';
   totalDialogOpens++;
+  // Pause drawing timer, start chat timer
+  if (drawingPhaseStart) { drawingAccumMs += Date.now() - drawingPhaseStart; drawingPhaseStart = null; }
+  chatPhaseStart = Date.now();
   chatCount = 0;
 
   stopBlink(); stopHintAnimation(); hideCompleteBtn(); closeAllPopups();
@@ -704,6 +728,9 @@ closeChatBtn.addEventListener('click', () => {
   phase = 'drawing';
   toolbar.style.display = 'flex';
   resetIdleTimer();
+  // Pause chat timer, resume drawing timer
+  if (chatPhaseStart) { chatAccumMs += Date.now() - chatPhaseStart; chatPhaseStart = null; }
+  drawingPhaseStart = Date.now();
 });
 
 // ─── CHAT ───────────────────────────────────────────────
@@ -751,6 +778,89 @@ cityBtn.addEventListener('click', () => {
   fetchSong();
 });
 
+// ─── SESSION COMPLETE — save to DB after song reveal ────
+async function saveSession(songData) {
+  try {
+    const t = { ...telemetry };
+    t.undoRatio   = t.totalStrokes > 0 ? Math.round(t.undoCount   / t.totalStrokes * 100) / 100 : 0;
+    t.eraserRatio = t.totalStrokes > 0 ? Math.round(t.eraserStrokes / t.totalStrokes * 100) / 100 : 0;
+    t.sessionOpenCount = totalDialogOpens; // final count, not the first-open snapshot
+    delete t.undoCount; delete t.eraserStrokes; delete t.totalStrokes;
+
+    // Finalize chat timer (we're in chat phase when song reveals)
+    const finalChatMs = chatAccumMs + (chatPhaseStart ? Date.now() - chatPhaseStart : 0);
+
+    const payload = {
+      session_id:               SESSION_ID,
+      drawing_duration_sec:      Math.round(drawingAccumMs / 1000),
+      conversation_duration_sec: Math.round(finalChatMs / 1000),
+      device_type:               /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'mobile' : 'desktop',
+      user_timezone:             Intl.DateTimeFormat().resolvedOptions().timeZone,
+      // Fallback: user may never open the picker — bg is the locked gradient hue
+      bg_color:             currentBgHex || `hsl(${Math.round(currentHue)}, 65%, 50%)`,
+      canvas_width:         drawCanvas.width,
+      canvas_height:        drawCanvas.height,
+      strokes:              strokes,
+      telemetry:            t,
+      chat_count:           chatCount,
+      spotify_query:        songData.spotify_query || null,
+      recommended_song:     songData.song || null,
+      recommended_artist:   songData.artist || null,
+      ai_reason:            songData.reason || null,
+      spotify_url:          songData.spotify_url || null,
+    };
+
+    const res  = await fetch(`${API_BASE}/session-complete`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    dbSessionId = data.db_session_id;
+    console.log('[DB] session saved:', dbSessionId);
+  } catch (err) {
+    console.warn('[DB] session save failed:', err);
+  }
+}
+
+// ─── STAR RATING — shown below song card ────────────────
+function addStarRating() {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'star-rating';
+  wrapper.innerHTML = `
+    <span class="star-label">Rate this pick:</span>
+    ${[1,2,3,4,5].map(n => `<span class="star" data-score="${n}">★</span>`).join('')}`;
+
+  wrapper.querySelectorAll('.star').forEach(star => {
+    star.addEventListener('mouseenter', () => {
+      const n = +star.dataset.score;
+      wrapper.querySelectorAll('.star').forEach(s => s.classList.toggle('hover', +s.dataset.score <= n));
+    });
+    star.addEventListener('mouseleave', () => {
+      wrapper.querySelectorAll('.star').forEach(s => s.classList.remove('hover'));
+    });
+    star.addEventListener('click', async () => {
+      if (!dbSessionId) return;
+      const score = +star.dataset.score;
+      wrapper.querySelectorAll('.star').forEach(s => s.classList.toggle('selected', +s.dataset.score <= score));
+      wrapper.querySelectorAll('.star').forEach(s => s.style.pointerEvents = 'none');
+      try {
+        await fetch(`${API_BASE}/rate`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            db_session_id: dbSessionId,
+            score,
+            song:   lastSongData?.song   || null,
+            artist: lastSongData?.artist || null,
+          }),
+        });
+      } catch (err) { console.warn('[DB] rate failed:', err); }
+    });
+  });
+
+  chatMsgs.appendChild(wrapper);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+
 // ─── SONG REVEAL — rendered as a card inside chat ───────
 async function fetchSong() {
   if (cityRevealed) return;
@@ -765,24 +875,63 @@ async function fetchSong() {
     const data = await res.json();
     typing.remove();
 
+    // Backend may return {error} (AI JSON parse fail / Spotify miss) —
+    // don't render an empty card, a null DB row, or a rating for nothing
+    if (data.error || (!data.song && !data.spotify_url)) {
+      console.warn('[song] result error:', data.error, data.raw);
+      addMsg('ai', "Hmm, I couldn't lock in a song — ask me again in a sec?");
+      cityRevealed = false; // allow retry
+      return;
+    }
+
     // Build song card as an AI chat bubble
     const card = document.createElement('div');
     card.className = 'msg ai city-card';
 
     const trackLabel = `${data.song || 'Your song'}${data.artist ? ` · ${data.artist}` : ''}`;
 
-    const spotifyHref = data.spotify_url ? `href="${data.spotify_url}" target="_blank" rel="noopener"` : '';
     card.innerHTML = `
-      ${data.image ? `<a class="city-card-img-wrap" ${spotifyHref}><img class="city-card-img" src="${data.image}" alt="${trackLabel}"></a>` : ''}
+      ${data.image ? `<a class="city-card-img-wrap"><img class="city-card-img" src="${data.image}" alt="${trackLabel}"></a>` : ''}
       <div class="city-card-body">
         <div class="city-card-name">${data.song || ''}</div>
         <div class="city-card-artist">${data.artist || ''}</div>
         <div class="city-card-reason">${data.reason || ''}</div>
-        ${data.spotify_url ? `<a class="city-card-spotify" href="${data.spotify_url}" target="_blank" rel="noopener">▶ Open in Spotify</a>` : ''}
+        ${data.spotify_url ? `<a class="city-card-spotify city-card-spotify-link" data-url="${data.spotify_url}">▶ Open in Spotify</a>` : ''}
       </div>`;
+
+    // Intercept Spotify link — log opened, then navigate
+    const spotifyLink = card.querySelector('.city-card-spotify-link');
+    if (spotifyLink) {
+      spotifyLink.style.cursor = 'pointer';
+      spotifyLink.addEventListener('click', async () => {
+        if (dbSessionId) {
+          try {
+            await fetch(`${API_BASE}/spotify-opened`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ db_session_id: dbSessionId }),
+            });
+          } catch (e) { /* non-blocking */ }
+        }
+        window.open(spotifyLink.dataset.url, '_blank', 'noopener');
+      });
+    }
+
+    // Same intercept for album art link
+    const imgWrap = card.querySelector('.city-card-img-wrap');
+    if (imgWrap && data.spotify_url) {
+      imgWrap.style.cursor = 'pointer';
+      imgWrap.addEventListener('click', () => spotifyLink && spotifyLink.click());
+    }
 
     chatMsgs.appendChild(card);
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
+
+    // Save session to DB (non-blocking)
+    lastSongData = data;
+    saveSession(data);
+
+    // Show star rating
+    addStarRating();
 
     // Keep input alive — user can ask for another song
     cityRevealed = false;  // allow re-trigger if AI outputs READY:true again
