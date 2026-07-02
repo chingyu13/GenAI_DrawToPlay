@@ -3,7 +3,7 @@
 html, body {
   width: 100%; height: 100%;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Sniglet', 'Huninn', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 /* Mobile keyboard fix: keep body (and its gradient) at the LARGE viewport
    height so opening the keyboard doesn't compress the whole background.
@@ -14,37 +14,26 @@ body { height: 100lvh; }
 /* ── Canvases ── */
 #drawing-canvas {
   position: fixed; top: 0; left: 0;
-  width: 100vw; height: 100vh; /* scale to window — internal resolution stays fixed */
+  /* bitmap always = window size (JS resizeCanvasToWindow); strokes are
+     vectors re-rendered through a uniform view transform — never stretch */
   display: block; z-index: 2; cursor: crosshair;
+  transform-origin: top left;
   /* smooth shrink/restore when chat opens/closes */
-  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1),
-              transform-origin 0s;
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
 }
 #blink-canvas {
   position: fixed; top: 0; left: 0;
-  width: 100vw; height: 100vh; /* keep in lockstep with drawing canvas */
+  /* kept in lockstep with drawing canvas by JS */
   display: block; z-index: 3; pointer-events: none;
-  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1),
-              transform-origin 0s;
-}
-
-/* Landscape chat-open: scale to fill left 50%, centered vertically */
-body.chat-open #drawing-canvas,
-body.chat-open #blink-canvas {
   transform-origin: top left;
-  /* scale(0.48) → 48vw×48vh; offset centers in 50vw×100vh available area */
-  transform: translateX(1vw) translateY(26vh) scale(0.48);
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Portrait chat-open: scale to fill top 35%, centered horizontally */
-@media (orientation: portrait) {
-  body.chat-open #drawing-canvas,
-  body.chat-open #blink-canvas {
-    transform-origin: top left;
-    /* scale(0.34) → 34vw×34vh; offset centers in 100vw×35vh available area */
-    transform: translateX(33vw) translateY(0.5vh) scale(0.34);
-  }
-}
+/* Chat-open mini-canvas placement is computed by JS (layoutMiniCanvas):
+   landscape → centered in left 50% | portrait → centered in top 35%.
+   The old hard-coded vw/vh transforms broke once the canvas could be
+   letterboxed/centered after a window resize. */
+
 
 /* ── Eye hint SVG — invisible but in layout so getScreenCTM() works ── */
 #hint-eyes {
@@ -68,7 +57,7 @@ body.chat-open #blink-canvas {
 
 /* ── Toolbar — landscape: bottom-right column; portrait: bottom-center row ── */
 #toolbar {
-  position: fixed; bottom: 24px; right: 24px;
+  position: fixed; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); right: 24px;
   z-index: 25; display: none;
   flex-direction: column; align-items: center; gap: 10px;
   transition: opacity 0.3s;
@@ -131,7 +120,7 @@ body.chat-open #blink-canvas {
 
 /* ── Complete button ── */
 #complete-btn {
-  position: fixed; bottom: 32px; left: 50%;
+  position: fixed; bottom: calc(32px + env(safe-area-inset-bottom, 0px)); left: 50%;
   transform: translateX(-50%); z-index: 20;
   padding: 13px 40px; border-radius: 999px; border: none;
   background: rgba(255,255,255,0.92); color: #222;
@@ -143,7 +132,7 @@ body.chat-open #blink-canvas {
 #complete-btn:hover { transform: translateX(-50%) scale(1.03); }
 /* Portrait: toolbar is a bottom-center row — lift the button above it */
 @media (orientation: portrait) {
-  #complete-btn { bottom: 96px; }
+  #complete-btn { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
 }
 
 /* ── Chat dialog
@@ -175,7 +164,7 @@ body.chat-open #blink-canvas {
 
 /* Close button — top right of dialog */
 #close-chat-btn {
-  position: absolute; top: 16px; right: 16px;
+  position: absolute; top: calc(16px + env(safe-area-inset-top, 0px)); right: 16px;
   width: 32px; height: 32px; border-radius: 50%; border: none;
   background: var(--bubble-bg, rgba(255,255,255,0.18));
   color: var(--pen-color, #fff);
@@ -191,6 +180,10 @@ body.chat-open #blink-canvas {
   flex: 1; overflow-y: auto;
   padding: 56px 16px 12px; /* top pad clears close btn */
   display: flex; flex-direction: column; gap: 10px;
+  /* 漸層消失: bubbles fade out as they scroll past the top of the dialog
+     instead of being sharply clipped */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 90px);
+  mask-image: linear-gradient(to bottom, transparent 0, black 90px);
 }
 /* hide scrollbar but keep scroll */
 #chat-messages::-webkit-scrollbar { display: none; }
@@ -218,7 +211,7 @@ body.chat-open #blink-canvas {
 /* Chat input row */
 #chat-input-row {
   display: flex; gap: 8px; align-items: center;
-  padding: 12px 16px 20px;
+  padding: 12px 16px calc(20px + env(safe-area-inset-bottom, 0px));
 }
 #chat-input {
   flex: 1; padding: 11px 16px;
@@ -364,6 +357,23 @@ body.chat-open #blink-canvas {
   transition: color 0.15s; user-select: none;
 }
 .star.hover, .star.selected { color: #f5c518; }
+
+/* ── Wide screens: bump text sizes (mobile sizes stay as-is) ── */
+@media (min-width: 1100px) {
+  #color-hint            { font-size: 1.45rem; }
+  #complete-btn          { font-size: 1.15rem; padding: 15px 48px; }
+  .msg                   { font-size: 1.15rem; }
+  #chat-input            { font-size: 1.1rem; }
+  #chat-input::placeholder { font-size: 1.1rem; }
+  .city-card-name        { font-size: 1.3rem; }
+  .city-card-artist      { font-size: 1.02rem; }
+  .city-card-reason      { font-size: 1rem; }
+  .city-card-spotify     { font-size: 0.95rem; }
+  .playlist-option-name  { font-size: 1.02rem; }
+  .playlist-option-meta  { font-size: 0.87rem; }
+  .star-label            { font-size: 0.92rem; }
+  .star                  { font-size: 1.6rem; }
+}
 
 /* ── Legacy full-screen overlay — disabled ── */
 #city-reveal { display: none !important; }

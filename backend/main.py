@@ -87,17 +87,40 @@ async def song_result_endpoint(req: MessageRequest):
     if "error" in song_data:
         return song_data
 
-    search_query = song_data.get("search_query") or f"{song_data.get('song')} {song_data.get('artist')}"
-    track = get_song(search_query)
+    song   = (song_data.get("song") or "").replace('"', "")
+    artist = (song_data.get("artist") or "").replace('"', "")
 
+    # Try precise → loose queries until Spotify returns a track.
+    # Field filters (track:/artist:) prevent wrong-song top hits.
+    queries = []
+    if song and artist:
+        queries.append(f'track:"{song}" artist:"{artist}"')
+    if song_data.get("search_query"):
+        queries.append(song_data["search_query"])
+    if song or artist:
+        queries.append(f"{song} {artist}".strip())
+
+    track, used_query = None, None
+    for q in queries:
+        result = get_song(q)
+        if result and "error" not in result:
+            track, used_query = result, q
+            break
+
+    if not track:
+        return {"error": "no_track_found"}
+
+    # CRITICAL: the card must describe the track the link opens —
+    # use Spotify's actual result, never the AI's unverified claim.
     return {
-        "song":        song_data.get("song"),
-        "artist":      song_data.get("artist"),
-        "reason":      song_data.get("reason"),
-        "image":       track.get("image"),
-        "preview_url": track.get("preview_url"),
-        "spotify_url": track.get("spotify_url"),
-        "album":       track.get("album"),
+        "song":          track.get("name"),
+        "artist":        track.get("artist"),
+        "reason":        song_data.get("reason"),
+        "image":         track.get("image"),
+        "preview_url":   track.get("preview_url"),
+        "spotify_url":   track.get("spotify_url"),
+        "album":         track.get("album"),
+        "spotify_query": used_query,
     }
 
 

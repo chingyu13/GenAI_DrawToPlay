@@ -2,8 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <!-- viewport-fit=cover: extend page under notch/home bar (no white/odd strips)
+       interactive-widget=resizes-visual: Chrome/Firefox keep layout when keyboard opens (Safari ignores; handled via visualViewport in app.js) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual" />
   <title>DrawToPlay</title>
+  <!-- Cute rounded fonts: Sniglet (Latin) + Huninn 粉圓體 (Traditional Chinese) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sniglet&family=Huninn&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
