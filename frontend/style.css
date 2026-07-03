@@ -43,16 +43,80 @@ body { height: 100lvh; }
   visibility: hidden; pointer-events: none;
 }
 
-/* ── Phase 1: color hint ── */
+/* ── Landing middle layer: emoji marquee ── */
+#emoji-marquee {
+  /* bleeds past top/bottom (JS sets the vars) — shifted DOWN so the top
+     row shows only the lower ~8% of the faces, bottom row lightly cut */
+  position: fixed; left: 0; right: 0; z-index: 1;
+  top: calc(-1 * var(--bleed-top, 90px));
+  bottom: calc(-1 * var(--bleed-bottom, 10px));
+  overflow: hidden; pointer-events: none;
+  opacity: 0.2;                            /* black strokes @ 20% */
+  display: flex; flex-direction: column; justify-content: space-between;
+  transition: opacity 0.7s;
+}
+.emoji-row {
+  display: flex; width: max-content;
+  animation: emoji-scroll var(--dur, 60s) linear infinite;
+}
+.emoji-strip { display: flex; align-items: center; }
+.emoji-strip svg { flex-shrink: 0; }
+/* two identical halves + (-50% → 0) = seamless left→right loop */
+@keyframes emoji-scroll {
+  from { transform: translateX(-50%); }
+  to   { transform: translateX(0); }
+}
+
+/* ── Phase 1: landing card + color hint ── */
 #color-hint {
   position: fixed; top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   z-index: 10; pointer-events: none;
   text-align: center;
-  color: rgba(255,255,255,0.9);
-  text-shadow: 0 1px 8px rgba(0,0,0,0.25);
-  font-size: 1.1rem; letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.92);
+  letter-spacing: 0.04em;
   transition: opacity 0.4s;
+}
+
+/* Liquid Glass card — standard recipe: heavy blur + saturation boost,
+   translucent fill, bright specular inset top edge, soft depth shadow */
+#landing-card {
+  position: relative; z-index: 1;   /* above the peek emoji */
+  padding: 26px 30px 22px;
+  border-radius: 32px;
+  width: min(92vw, 560px);          /* wide → tagline stays ~2 lines */
+  background: rgba(255, 255, 255, 0.10);
+  /* light frost: emojis behind stay visible, just 霧化 */
+  backdrop-filter: blur(9px) saturate(170%);
+  -webkit-backdrop-filter: blur(9px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.50),   /* specular highlight */
+    inset 0 -1px 0 rgba(255, 255, 255, 0.10),
+    0 12px 40px rgba(0, 0, 0, 0.22);
+}
+/* Chromium only (set by JS): true liquid refraction via SVG displacement
+   map — pattern from github.com/archisvaze/liquid-glass & kube.io */
+#landing-card.lg-refract {
+  backdrop-filter: url(#lg-refract) blur(3px) saturate(180%);
+  -webkit-backdrop-filter: url(#lg-refract) blur(3px) saturate(180%);
+}
+#landing-tagline {
+  font-size: 1.2rem; line-height: 1.55;
+  margin-bottom: 16px;
+  text-shadow: 0 1px 10px rgba(0,0,0,0.15);
+}
+#landing-tap {
+  font-size: 0.92rem;
+  animation: tap-pulse 2.2s ease-in-out infinite;
+}
+@keyframes tap-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+@media (min-width: 1100px) {
+  #landing-tagline { font-size: 1.5rem; }
+  #landing-tap     { font-size: 1.05rem; }
 }
 
 /* ── Toolbar — landscape: bottom-right column; portrait: bottom-center row ── */

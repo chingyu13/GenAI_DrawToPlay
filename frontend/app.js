@@ -38,42 +38,50 @@ const cityRevealWeather = document.getElementById('city-reveal-weather');
 // The AI conversation follows browserLanguage on its own; this map covers
 // the fixed UI labels for frequent languages. Default: English.
 const UI_STRINGS = {
-  en: { tapToLock: 'Tap to lock in your color', completed: 'Completed ✓',
+  en: { tagline: 'Draw your current mood, AI will pick a song to match it!',
+        tapToLock: 'Tap to lock in your color', completed: 'Completed ✓',
         typeHere: 'Type here…', differentVibe: 'Want a different vibe? Tell me…',
         somethingDifferent: 'Want something different? Tell me…',
         rateLabel: 'Rate this pick:',
         playlistIntro: 'Here are 3 playlists — pick whichever vibe fits 🎵' },
-  'zh-TW': { tapToLock: '點擊畫面來鎖定顏色', completed: '完成 ✓',
+  'zh-TW': { tagline: '畫現在的心情，我挑一首適合的歌給你!',
+        tapToLock: '點擊畫面來鎖定顏色', completed: '完成 ✓',
         typeHere: '在這裡輸入…', differentVibe: '想換個風格？告訴我…',
         somethingDifferent: '想聽點不一樣的？告訴我…',
         rateLabel: '為這首歌評分：',
         playlistIntro: '這裡有 3 個歌單——挑個合你心情的 🎵' },
-  'zh-CN': { tapToLock: '点击画面来锁定颜色', completed: '完成 ✓',
+  'zh-CN': { tagline: '画下现在的心情，我挑一首合适的歌给你!',
+        tapToLock: '点击画面来锁定颜色', completed: '完成 ✓',
         typeHere: '在这里输入…', differentVibe: '想换个风格？告诉我…',
         somethingDifferent: '想听点不一样的？告诉我…',
         rateLabel: '为这首歌评分：',
         playlistIntro: '这里有 3 个歌单——挑个合你心情的 🎵' },
-  ja: { tapToLock: 'タップして色を決定', completed: '完成 ✓',
+  ja: { tagline: '今の気分を描いてね、ぴったりの一曲を選んであげる！',
+        tapToLock: 'タップして色を決定', completed: '完成 ✓',
         typeHere: 'ここに入力…', differentVibe: '違う雰囲気がいい？教えてね…',
         somethingDifferent: '他のも聴きたい？教えてね…',
         rateLabel: 'この曲を評価：',
         playlistIntro: 'プレイリストを3つ用意したよ——好きなのを選んでね 🎵' },
-  ko: { tapToLock: '탭해서 색을 고정하세요', completed: '완료 ✓',
+  ko: { tagline: '지금 기분을 그려봐요, 어울리는 노래 하나 골라줄게요!',
+        tapToLock: '탭해서 색을 고정하세요', completed: '완료 ✓',
         typeHere: '여기에 입력…', differentVibe: '다른 분위기를 원해요? 알려주세요…',
         somethingDifferent: '다른 걸 원해요? 알려주세요…',
         rateLabel: '이 곡 평가:',
         playlistIntro: '플레이리스트 3개를 준비했어요 — 마음에 드는 걸 골라보세요 🎵' },
-  es: { tapToLock: 'Toca para fijar tu color', completed: 'Listo ✓',
+  es: { tagline: 'Dibuja cómo te sientes ahora, ¡yo te elijo la canción perfecta!',
+        tapToLock: 'Toca para fijar tu color', completed: 'Listo ✓',
         typeHere: 'Escribe aquí…', differentVibe: '¿Otro rollo? Cuéntame…',
         somethingDifferent: '¿Algo diferente? Cuéntame…',
         rateLabel: 'Valora esta canción:',
         playlistIntro: 'Aquí tienes 3 playlists — elige la que más te guste 🎵' },
-  de: { tapToLock: 'Tippen, um deine Farbe festzulegen', completed: 'Fertig ✓',
+  de: { tagline: 'Zeichne deine Stimmung, ich such dir den passenden Song aus!',
+        tapToLock: 'Tippen, um deine Farbe festzulegen', completed: 'Fertig ✓',
         typeHere: 'Hier tippen…', differentVibe: 'Lust auf einen anderen Vibe? Sag’s mir…',
         somethingDifferent: 'Etwas anderes? Sag’s mir…',
         rateLabel: 'Bewerte diesen Song:',
         playlistIntro: 'Hier sind 3 Playlists — such dir einen Vibe aus 🎵' },
-  ar: { tapToLock: 'انقر لتثبيت لونك', completed: 'تم ✓',
+  ar: { tagline: 'ارسم مزاجك الآن وسأختار لك أغنية تناسبه!',
+        tapToLock: 'انقر لتثبيت لونك', completed: 'تم ✓',
         typeHere: 'اكتب هنا…', differentVibe: 'تريد أجواء مختلفة؟ أخبرني…',
         somethingDifferent: 'تريد شيئًا مختلفًا؟ أخبرني…',
         rateLabel: 'قيّم هذه الأغنية:',
@@ -90,9 +98,86 @@ function pickUiStrings() {
 const UI = pickUiStrings();
 
 // Apply to static elements
-colorHint.querySelector('p').textContent = UI.tapToLock;
+document.getElementById('landing-tagline').textContent = UI.tagline;
+document.getElementById('landing-tap').textContent     = UI.tapToLock;
 completeBtn.textContent = UI.completed;
 chatInput.placeholder   = UI.typeHere;
+
+// ─── LANDING EMOJI MARQUEE (middle layer) ───────────────
+// Rows of the 24 hand-drawn emojis (emoji-symbols.svg) scrolling
+// left→right in an endless loop. Fades out when the colour is locked.
+const emojiMarquee = document.getElementById('emoji-marquee');
+
+function buildEmojiMarquee() {
+  const EMOJI_N = 24;
+  emojiMarquee.innerHTML = '';
+  // big emojis; row count adapts to screen height/ratio
+  const size = Math.round(Math.max(88, Math.min(150, window.innerHeight * 0.14)));
+  const gap  = Math.round(size * 0.9);
+  // Symmetric bleed: rows overflow ±45% of emoji size past top/bottom
+  const bleedTop    = Math.round(size * 0.45);
+  const bleedBottom = Math.round(size * 0.45);
+  emojiMarquee.style.setProperty('--bleed-top',    bleedTop + 'px');
+  emojiMarquee.style.setProperty('--bleed-bottom', bleedBottom + 'px');
+  const span = window.innerHeight + bleedTop + bleedBottom;
+  const rows = Math.max(3, Math.round(span / (size * 1.56))); // row spacing +10%
+  const perStrip = Math.ceil(window.innerWidth / (size + gap)) + 2;
+
+  for (let r = 0; r < rows; r++) {
+    const row = document.createElement('div');
+    row.className = 'emoji-row';
+    row.style.setProperty('--dur', (56 + Math.random() * 10).toFixed(1) + 's'); // ~60s/loop
+    row.style.animationDelay = (-Math.random() * 60).toFixed(1) + 's';          // desync rows
+    const order = [...Array(EMOJI_N).keys()].sort(() => Math.random() - 0.5);
+    for (let half = 0; half < 2; half++) {   // two identical halves = seamless
+      const strip = document.createElement('div');
+      strip.className = 'emoji-strip';
+      strip.style.gap = gap + 'px';
+      strip.style.paddingRight = gap + 'px';
+      for (let i = 0; i < perStrip; i++) {
+        strip.insertAdjacentHTML('beforeend',
+          `<svg width="${size}" height="${size}"><use href="emoji-symbols.svg#emoji-${order[i % EMOJI_N] + 1}"/></svg>`);
+      }
+      row.appendChild(strip);
+    }
+    emojiMarquee.appendChild(row);
+  }
+}
+buildEmojiMarquee();
+
+function fadeOutEmojiMarquee() {
+  emojiMarquee.style.opacity = '0';
+  setTimeout(() => { emojiMarquee.style.display = 'none'; }, 750);
+}
+
+// ─── LIQUID GLASS REFRACTION (Chromium only) ────────────
+// Generates a displacement map (R = x-shift, G = y-shift) and feeds it to
+// the #lg-refract SVG filter, used as backdrop-filter on the landing card.
+// Safari/Firefox don't support SVG filters in backdrop-filter → they keep
+// the frosted-blur fallback. Pattern from github.com/archisvaze/liquid-glass.
+(function initLiquidRefraction() {
+  const chromium = 'chrome' in window &&
+    (CSS.supports('backdrop-filter', 'url(#lg-refract)') ||
+     CSS.supports('-webkit-backdrop-filter', 'url(#lg-refract)'));
+  if (!chromium) return;
+  const W = 480, H = 240;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(W, H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      img.data[i]     = Math.round(255 * x / (W - 1)); // R → horizontal shift
+      img.data[i + 1] = Math.round(255 * y / (H - 1)); // G → vertical shift
+      img.data[i + 2] = 128;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  document.getElementById('lg-map').setAttribute('href', c.toDataURL());
+  document.getElementById('landing-card').classList.add('lg-refract');
+})();
 
 // ─── CANVAS INIT — vector strokes + view transform ─────
 // Strokes are VECTOR data in a fixed REFERENCE space (the window size at
@@ -302,6 +387,7 @@ function redrawAll() {
 // basePenWidth recalculates so pen/eraser feel the same relative to window.
 window.addEventListener('resize', () => {
   stopHintAnimation();
+  if (phase === 'color-select') buildEmojiMarquee(); // refit landing marquee
   if (document.body.classList.contains('chat-open')) {
     layoutMiniCanvas();       // keep mini canvas in place
   } else {
@@ -401,6 +487,7 @@ document.body.addEventListener('click', e => {
   drawingPhaseStart = Date.now(); // start drawing timer
   colorHint.style.opacity = '0';
   setTimeout(() => { colorHint.style.display = 'none'; }, 400);
+  fadeOutEmojiMarquee();
   toolbar.style.display = 'flex';
   setTimeout(startHintAnimation, 350);
 });

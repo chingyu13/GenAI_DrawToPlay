@@ -13,6 +13,9 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- Landing middle layer: hand-drawn emojis scrolling left→right (built by JS) -->
+  <div id="emoji-marquee" aria-hidden="true"></div>
+
   <!-- Drawing canvas (user draws here) -->
   <canvas id="drawing-canvas"></canvas>
 
@@ -36,9 +39,21 @@
          c-12.5,5.1-6.6,11.5,0.3,22.5"/>
   </svg>
 
-  <!-- Phase 1: tap to confirm color -->
+  <!-- Liquid Glass refraction filter (Chromium only; map filled by JS) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <filter id="lg-refract" x="0" y="0" width="100%" height="100%">
+      <feImage id="lg-map" href="" preserveAspectRatio="none" result="map"/>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="46"
+                         xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
+
+  <!-- Phase 1: landing card (liquid glass) + tap to confirm color -->
   <div id="color-hint">
-    <p>Tap to lock in your color</p>
+    <div id="landing-card">
+      <p id="landing-tagline"></p>
+      <p id="landing-tap"></p>
+    </div>
   </div>
 
   <!-- Drawing toolbar (phase 2+) — landscape: bottom-right col; portrait: bottom-center row -->
