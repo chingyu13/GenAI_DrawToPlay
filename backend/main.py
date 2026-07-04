@@ -1,21 +1,88 @@
 # main.py — FastAPI entry point
-from fastapi import FastAPI, Request
+import os
+import time
+from collections import defaultdict, deque
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional, List
-from agent import chat, get_song_result, get_playlist_result, extract_session_features
-from tools import get_song, get_playlists
-from database import save_session, update_spotify_opened, append_song_rating
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from typing import Optional
+from agent import chat, get_song_result, get_playlist_result, extract_session_features, get_conversation, score_song_candidates
+from tools import get_song, get_songs, get_playlists
+from database import save_session, update_spotify_opened, append_song_rating, session_belongs_to_frontend
 import requests as http_requests
 
 app = FastAPI()
 
+# Minimum mood-fit score for a keyword-search candidate to be accepted outright.
+SONG_MATCH_THRESHOLD = 0.6
+DEFAULT_ALLOWED_ORIGINS = "http://localhost:8080,http://localhost:5173,http://127.0.0.1:8080,http://127.0.0.1:5173"
+_local_origins = [o.strip() for o in DEFAULT_ALLOWED_ORIGINS.split(",") if o.strip()]
+_env_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+ALLOWED_ORIGINS = list(dict.fromkeys(_env_origins + _local_origins))
+RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "60"))
+RATE_LIMIT_WINDOW_SEC = int(os.getenv("RATE_LIMIT_WINDOW_SEC", "60"))
+TRUST_PROXY = os.getenv("TRUST_PROXY", "").lower() in ("1", "true", "yes")
+_request_times: dict[str, deque[float]] = defaultdict(deque)
+SESSION_LINK_TTL_SEC = int(os.getenv("SESSION_LINK_TTL_SEC", "7200"))
+_session_db_ids: dict[str, tuple[str, float]] = {}
+
+
+def client_ip(request: Request) -> str:
+    """Use X-Forwarded-For only when explicitly behind a trusted reverse proxy."""
+    if TRUST_PROXY:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def remember_db_session(frontend_session_id: str, db_session_id: str) -> None:
+    now = time.time()
+    expired = [
+        sid for sid, (_, created_at) in _session_db_ids.items()
+        if now - created_at > SESSION_LINK_TTL_SEC
+    ]
+    for sid in expired:
+        _session_db_ids.pop(sid, None)
+    _session_db_ids[frontend_session_id] = (db_session_id, now)
+
+
+def session_matches_db(frontend_session_id: str, db_session_id: str) -> bool:
+    if session_belongs_to_frontend(db_session_id, frontend_session_id):
+        return True
+    remembered = _session_db_ids.get(frontend_session_id)
+    if not remembered:
+        return False
+    remembered_db_id, created_at = remembered
+    if time.time() - created_at > SESSION_LINK_TTL_SEC:
+        _session_db_ids.pop(frontend_session_id, None)
+        return False
+    return remembered_db_id == db_session_id
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    ip = client_ip(request)
+    now = time.time()
+    bucket = _request_times[ip]
+    while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SEC:
+        bucket.popleft()
+    if len(bucket) >= RATE_LIMIT_MAX:
+        return JSONResponse({"detail": "rate limit exceeded"}, status_code=429)
+    bucket.append(now)
+    return await call_next(request)
 
 @app.get("/")
 @app.get("/health")
@@ -23,14 +90,14 @@ def health():
     return {"status": "ok"}
 
 class MessageRequest(BaseModel):
-    message:    str
-    session_id: str
-    image:      Optional[str]  = None
+    message:    str = Field(..., max_length=2000)
+    session_id: str = Field(..., min_length=8, max_length=80)
+    image:      Optional[str]  = Field(default=None, max_length=5_500_000)
     telemetry:  Optional[dict] = None
 
 
 class SessionCompleteRequest(BaseModel):
-    session_id:                str
+    session_id:                str = Field(..., min_length=8, max_length=80)
     drawing_duration_sec:      Optional[int]  = None
     conversation_duration_sec: Optional[int]  = None
     device_type:               Optional[str]  = None
@@ -38,37 +105,37 @@ class SessionCompleteRequest(BaseModel):
     bg_color:            Optional[str]   = None
     canvas_width:        Optional[int]   = None
     canvas_height:       Optional[int]   = None
-    strokes:             Optional[list]  = None
+    strokes:             Optional[list]  = Field(default=None, max_length=2500)
     telemetry:           Optional[dict]  = None
     chat_count:          Optional[int]   = None
-    spotify_query:       Optional[str]   = None
-    recommended_song:    Optional[str]   = None
-    recommended_artist:  Optional[str]   = None
-    ai_reason:           Optional[str]   = None
-    spotify_url:         Optional[str]   = None
+    spotify_query:       Optional[str]   = Field(default=None, max_length=300)
+    recommended_song:    Optional[str]   = Field(default=None, max_length=300)
+    recommended_artist:  Optional[str]   = Field(default=None, max_length=300)
+    ai_reason:           Optional[str]   = Field(default=None, max_length=1000)
+    spotify_url:         Optional[str]   = Field(default=None, max_length=1000)
 
 
 class SpotifyOpenedRequest(BaseModel):
-    db_session_id: str
+    session_id: str = Field(..., min_length=8, max_length=80)
+    db_session_id: str = Field(..., min_length=1, max_length=80)
 
 
 class RateRequest(BaseModel):
-    db_session_id: str
+    session_id: str = Field(..., min_length=8, max_length=80)
+    db_session_id: str = Field(..., min_length=1, max_length=80)
     score:         int    # 1–5
-    song:          Optional[str] = None
-    artist:        Optional[str] = None
+    song:          Optional[str] = Field(default=None, max_length=300)
+    artist:        Optional[str] = Field(default=None, max_length=300)
 
-
-# ─── EXISTING ENDPOINTS (unchanged) ────────────────────────
 
 @app.post("/chat")
-async def chat_endpoint(req: MessageRequest):
+def chat_endpoint(req: MessageRequest):
     result = chat(req.session_id, req.message, req.image, req.telemetry)
     return result
 
 
 @app.post("/playlist-result")
-async def playlist_result_endpoint(req: MessageRequest):
+def playlist_result_endpoint(req: MessageRequest):
     data = get_playlist_result(req.session_id)
     print(f"[API] playlist_result from AI: {data}")
     if "error" in data:
@@ -81,37 +148,51 @@ async def playlist_result_endpoint(req: MessageRequest):
 
 
 @app.post("/song-result")
-async def song_result_endpoint(req: MessageRequest):
+def song_result_endpoint(req: MessageRequest):
     song_data = get_song_result(req.session_id)
 
     if "error" in song_data:
         return song_data
 
-    song   = (song_data.get("song") or "").replace('"', "")
-    artist = (song_data.get("artist") or "").replace('"', "")
-
-    # Try precise → loose queries until Spotify returns a track.
-    # Field filters (track:/artist:) prevent wrong-song top hits.
-    queries = []
-    if song and artist:
-        queries.append(f'track:"{song}" artist:"{artist}"')
-    if song_data.get("search_query"):
-        queries.append(song_data["search_query"])
-    if song or artist:
-        queries.append(f"{song} {artist}".strip())
+    song         = (song_data.get("song") or "").replace('"', "")
+    artist       = (song_data.get("artist") or "").replace('"', "")
+    search_query = song_data.get("search_query")
 
     track, used_query = None, None
-    for q in queries:
-        result = get_song(q)
-        if result and "error" not in result:
-            track, used_query = result, q
-            break
+
+    # No artist requested: keyword search top 3, pick first candidate whose
+    # Spotify tags (artist genres) match the session mood; else highest score.
+    if not artist and search_query:
+        candidates = get_songs(search_query, limit=3)
+        if candidates:
+            scores = score_song_candidates(req.session_id, candidates)
+            print(f"[API] candidate scores: {[(c['name'], s) for c, s in zip(candidates, scores)]}")
+            track = next(
+                (c for c, s in zip(candidates, scores) if s >= SONG_MATCH_THRESHOLD),
+                candidates[scores.index(max(scores))],
+            )
+            used_query = search_query
+
+    # Artist explicitly requested, or keyword search found nothing:
+    # query with increasing looseness; prefer track:/artist: filters.
+    if not track:
+        queries = []
+        if song and artist:
+            queries.append(f'track:"{song}" artist:"{artist}"')
+        if search_query:
+            queries.append(search_query)
+        if song or artist:
+            queries.append(f"{song} {artist}".strip())
+        for q in queries:
+            result = get_song(q)
+            if result and "error" not in result:
+                track, used_query = result, q
+                break
 
     if not track:
         return {"error": "no_track_found"}
 
-    # CRITICAL: the card must describe the track the link opens —
-    # use Spotify's actual result, never the AI's unverified claim.
+    # Card text must match the Spotify link target.
     return {
         "song":          track.get("name"),
         "artist":        track.get("artist"),
@@ -124,12 +205,10 @@ async def song_result_endpoint(req: MessageRequest):
     }
 
 
-# ─── NEW ENDPOINTS ──────────────────────────────────────────
-
 def get_user_region(request: Request) -> str:
     """Best-effort country code from IP."""
     try:
-        ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
+        ip = client_ip(request)
         if ip in ("127.0.0.1", "::1"):
             return None
         res = http_requests.get(f"https://ip-api.com/json/{ip}?fields=countryCode", timeout=3)
@@ -139,7 +218,7 @@ def get_user_region(request: Request) -> str:
 
 
 @app.post("/session-complete")
-async def session_complete_endpoint(req: SessionCompleteRequest, request: Request):
+def session_complete_endpoint(req: SessionCompleteRequest, request: Request):
     """Called once after song card is shown. Runs AI extraction, saves full row, returns db_session_id."""
     # AI extraction pass over conversation
     features = extract_session_features(req.session_id)
@@ -160,7 +239,7 @@ async def session_complete_endpoint(req: SessionCompleteRequest, request: Reques
         "canvas_height":         req.canvas_height,
         "strokes":               req.strokes,
         "telemetry":             req.telemetry,
-        "conversation":          None,   # stored in session_memories, not sent over wire
+        "conversation":          get_conversation(req.session_id) or None,
         "chat_count":            req.chat_count,
         "language":              features.get("language"),
         "ai_keywords":           features.get("ai_keywords"),
@@ -175,20 +254,25 @@ async def session_complete_endpoint(req: SessionCompleteRequest, request: Reques
         "user_score":            None,
     })
     print(f"[DB] session saved: {db_id}")
+    remember_db_session(req.session_id, db_id)
     return {"db_session_id": db_id}
 
 
 @app.post("/spotify-opened")
-async def spotify_opened_endpoint(req: SpotifyOpenedRequest):
+def spotify_opened_endpoint(req: SpotifyOpenedRequest):
     """Called when user clicks the Spotify link."""
+    if not session_matches_db(req.session_id, req.db_session_id):
+        raise HTTPException(status_code=403, detail="session mismatch")
     update_spotify_opened(req.db_session_id)
     return {"ok": True}
 
 
 @app.post("/rate")
-async def rate_endpoint(req: RateRequest):
+def rate_endpoint(req: RateRequest):
     """Append a song rating to the session's song_ratings array."""
     if not 1 <= req.score <= 5:
         return {"error": "score must be 1–5"}
+    if not session_matches_db(req.session_id, req.db_session_id):
+        raise HTTPException(status_code=403, detail="session mismatch")
     append_song_rating(req.db_session_id, req.song, req.artist, req.score)
     return {"ok": True}

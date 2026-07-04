@@ -1,5 +1,8 @@
 // ─── CONFIG ─────────────────────────────────────────────
-const API_BASE   = 'https://dr-9dfd56ca90d448ed9551f88cb5aae645.ecs.ap-southeast-2.on.aws';
+const DEPLOYED_API_BASE = 'https://dr-9dfd56ca90d448ed9551f88cb5aae645.ecs.ap-southeast-2.on.aws';
+const API_BASE = /^localhost$|^127\.0\.0\.1$/.test(location.hostname)
+  ? 'http://localhost:8080'
+  : DEPLOYED_API_BASE;
 const SESSION_ID = crypto.randomUUID();
 
 // ─── DOM ────────────────────────────────────────────────
@@ -27,60 +30,91 @@ const closeChatBtn   = document.getElementById('close-chat-btn');
 const chatMsgs       = document.getElementById('chat-messages');
 const chatInput      = document.getElementById('chat-input');
 const sendBtn        = document.getElementById('send-btn');
-const cityBtn        = document.getElementById('city-btn');
+const songBtn        = document.getElementById('song-btn');
 const cityReveal     = document.getElementById('city-reveal');
 const cityRevealImg     = document.getElementById('city-reveal-img');
 const cityRevealReason  = document.getElementById('city-reveal-reason');
 const cityRevealName    = document.getElementById('city-reveal-name');
 const cityRevealWeather = document.getElementById('city-reveal-weather');
+const drawHintEl        = document.getElementById('draw-hint');
 
 // ─── STATIC UI STRINGS (by browser language) ────────────
-// The AI conversation follows browserLanguage on its own; this map covers
-// the fixed UI labels for frequent languages. Default: English.
 const UI_STRINGS = {
-  en: { tagline: 'Draw your current mood, AI will pick a song to match it!',
+  en: { tagline: 'Draw your current mood! I\'ll pick a song to match it!',
+        drawHintMouse: 'Go ahead! draw with your mouse',
+        drawHintTouch: 'Go ahead! draw with your finger',
         tapToLock: 'Tap to lock in your color', completed: 'Completed ✓',
         typeHere: 'Type here…', differentVibe: 'Want a different vibe? Tell me…',
         somethingDifferent: 'Want something different? Tell me…',
         rateLabel: 'Rate this pick:',
         playlistIntro: 'Here are 3 playlists — pick whichever vibe fits 🎵' },
-  'zh-TW': { tagline: '畫現在的心情，我挑一首適合的歌給你!',
-        tapToLock: '點擊畫面來鎖定顏色', completed: '完成 ✓',
+  'en-US': { tagline: 'Draw your current mood! I\'ll pick a song to match it!',
+        drawHintMouse: 'Go ahead! draw with your mouse',
+        drawHintTouch: 'Go ahead! draw with your finger',
+        tapToLock: 'Tap to lock in your color', completed: 'Completed ✓',
+        typeHere: 'Type here…', differentVibe: 'Want a different vibe? Tell me…',
+        somethingDifferent: 'Want something different? Tell me…',
+        rateLabel: 'Rate this pick:',
+        playlistIntro: 'Here are 3 playlists — pick whichever vibe fits 🎵' },
+  'en-AU': { tagline: 'Draw how you\'re feeling — I\'ll pick a song to match!',
+        drawHintMouse: 'Go on! draw with your mouse',
+        drawHintTouch: 'Go on! draw with your finger',
+        tapToLock: 'Tap to lock in your colour', completed: 'Done ✓',
+        typeHere: 'Type here…', differentVibe: 'Want a different vibe? Tell me…',
+        somethingDifferent: 'Want something different? Tell me…',
+        rateLabel: 'Rate this pick:',
+        playlistIntro: 'Here are 3 playlists — pick whichever vibe fits 🎵' },
+  'zh-TW': { tagline: '畫現在的心情，我挑一首適合的歌給你！',
+        drawHintMouse: '試試用滑鼠畫畫看吧',
+        drawHintTouch: '試試用手指畫畫看吧',
+        tapToLock: '點擊畫面來鎖定顏色', completed: '畫完了~',
         typeHere: '在這裡輸入…', differentVibe: '想換個風格？告訴我…',
         somethingDifferent: '想聽點不一樣的？告訴我…',
-        rateLabel: '為這首歌評分：',
-        playlistIntro: '這裡有 3 個歌單——挑個合你心情的 🎵' },
-  'zh-CN': { tagline: '画下现在的心情，我挑一首合适的歌给你!',
+        rateLabel: '為我的推薦評分：',
+        playlistIntro: '這裡有 3 個歌單，挑個合你心情的吧~ 🎵' },
+  'zh-CN': { tagline: '画下现在的心情，我挑一首合适的歌给你！',
+        drawHintMouse: '试试用鼠标画画看吧',
+        drawHintTouch: '试试用手指画画看吧',
         tapToLock: '点击画面来锁定颜色', completed: '完成 ✓',
         typeHere: '在这里输入…', differentVibe: '想换个风格？告诉我…',
         somethingDifferent: '想听点不一样的？告诉我…',
-        rateLabel: '为这首歌评分：',
-        playlistIntro: '这里有 3 个歌单——挑个合你心情的 🎵' },
+        rateLabel: '为我的推荐评分：',
+        playlistIntro: '这里有 3 个歌单，挑个合你心情的吧~ 🎵' },
   ja: { tagline: '今の気分を描いてね、ぴったりの一曲を選んであげる！',
+        drawHintMouse: 'マウスで描いてみてね',
+        drawHintTouch: '指で描いてみてね',
         tapToLock: 'タップして色を決定', completed: '完成 ✓',
         typeHere: 'ここに入力…', differentVibe: '違う雰囲気がいい？教えてね…',
         somethingDifferent: '他のも聴きたい？教えてね…',
         rateLabel: 'この曲を評価：',
         playlistIntro: 'プレイリストを3つ用意したよ——好きなのを選んでね 🎵' },
   ko: { tagline: '지금 기분을 그려봐요, 어울리는 노래 하나 골라줄게요!',
+        drawHintMouse: '마우스로 그려 보세요',
+        drawHintTouch: '손가락으로 그려 보세요',
         tapToLock: '탭해서 색을 고정하세요', completed: '완료 ✓',
         typeHere: '여기에 입력…', differentVibe: '다른 분위기를 원해요? 알려주세요…',
         somethingDifferent: '다른 걸 원해요? 알려주세요…',
         rateLabel: '이 곡 평가:',
         playlistIntro: '플레이리스트 3개를 준비했어요 — 마음에 드는 걸 골라보세요 🎵' },
-  es: { tagline: 'Dibuja cómo te sientes ahora, ¡yo te elijo la canción perfecta!',
+  es: { tagline: 'Dibuja cómo te sientes — te elijo la canción perfecta',
+        drawHintMouse: 'Adelante — dibuja con el ratón',
+        drawHintTouch: 'Adelante — dibuja con el dedo',
         tapToLock: 'Toca para fijar tu color', completed: 'Listo ✓',
         typeHere: 'Escribe aquí…', differentVibe: '¿Otro rollo? Cuéntame…',
         somethingDifferent: '¿Algo diferente? Cuéntame…',
         rateLabel: 'Valora esta canción:',
         playlistIntro: 'Aquí tienes 3 playlists — elige la que más te guste 🎵' },
-  de: { tagline: 'Zeichne deine Stimmung, ich such dir den passenden Song aus!',
+  de: { tagline: 'Zeichne deine Stimmung — ich such dir den passenden Song aus!',
+        drawHintMouse: 'Los geht\'s — zeichne mit der Maus',
+        drawHintTouch: 'Los geht\'s — zeichne mit dem Finger',
         tapToLock: 'Tippen, um deine Farbe festzulegen', completed: 'Fertig ✓',
         typeHere: 'Hier tippen…', differentVibe: 'Lust auf einen anderen Vibe? Sag’s mir…',
         somethingDifferent: 'Etwas anderes? Sag’s mir…',
         rateLabel: 'Bewerte diesen Song:',
         playlistIntro: 'Hier sind 3 Playlists — such dir einen Vibe aus 🎵' },
-  ar: { tagline: 'ارسم مزاجك الآن وسأختار لك أغنية تناسبه!',
+  ar: { tagline: 'ارسم مزاجك الآن — سأختار لك أغنية تناسبه!',
+        drawHintMouse: 'تفضّل — ارسم بالفأرة',
+        drawHintTouch: 'تفضّل — ارسم بإصبعك',
         tapToLock: 'انقر لتثبيت لونك', completed: 'تم ✓',
         typeHere: 'اكتب هنا…', differentVibe: 'تريد أجواء مختلفة؟ أخبرني…',
         somethingDifferent: 'تريد شيئًا مختلفًا؟ أخبرني…',
@@ -90,6 +124,7 @@ const UI_STRINGS = {
 
 function pickUiStrings() {
   const lang = (navigator.language || 'en').toLowerCase();
+  if (UI_STRINGS[lang]) return UI_STRINGS[lang];
   if (lang.startsWith('zh')) {
     return /cn|sg|hans/.test(lang) ? UI_STRINGS['zh-CN'] : UI_STRINGS['zh-TW'];
   }
@@ -97,39 +132,34 @@ function pickUiStrings() {
 }
 const UI = pickUiStrings();
 
-// Apply to static elements
 document.getElementById('landing-tagline').textContent = UI.tagline;
 document.getElementById('landing-tap').textContent     = UI.tapToLock;
 completeBtn.textContent = UI.completed;
 chatInput.placeholder   = UI.typeHere;
 
-// ─── LANDING EMOJI MARQUEE (middle layer) ───────────────
-// Rows of the 24 hand-drawn emojis (emoji-symbols.svg) scrolling
-// left→right in an endless loop. Fades out when the colour is locked.
+// ─── LANDING EMOJI MARQUEE ──────────────────────────────
 const emojiMarquee = document.getElementById('emoji-marquee');
 
 function buildEmojiMarquee() {
   const EMOJI_N = 24;
   emojiMarquee.innerHTML = '';
-  // big emojis; row count adapts to screen height/ratio
   const size = Math.round(Math.max(88, Math.min(150, window.innerHeight * 0.14)));
   const gap  = Math.round(size * 0.9);
-  // Symmetric bleed: rows overflow ±45% of emoji size past top/bottom
   const bleedTop    = Math.round(size * 0.45);
   const bleedBottom = Math.round(size * 0.45);
   emojiMarquee.style.setProperty('--bleed-top',    bleedTop + 'px');
   emojiMarquee.style.setProperty('--bleed-bottom', bleedBottom + 'px');
   const span = window.innerHeight + bleedTop + bleedBottom;
-  const rows = Math.max(3, Math.round(span / (size * 1.56))); // row spacing +10%
+  const rows = Math.max(3, Math.round(span / (size * 1.56)));
   const perStrip = Math.ceil(window.innerWidth / (size + gap)) + 2;
 
   for (let r = 0; r < rows; r++) {
     const row = document.createElement('div');
     row.className = 'emoji-row';
-    row.style.setProperty('--dur', (56 + Math.random() * 10).toFixed(1) + 's'); // ~60s/loop
-    row.style.animationDelay = (-Math.random() * 60).toFixed(1) + 's';          // desync rows
+    row.style.setProperty('--dur', (56 + Math.random() * 10).toFixed(1) + 's');
+    row.style.animationDelay = (-Math.random() * 60).toFixed(1) + 's';
     const order = [...Array(EMOJI_N).keys()].sort(() => Math.random() - 0.5);
-    for (let half = 0; half < 2; half++) {   // two identical halves = seamless
+    for (let half = 0; half < 2; half++) {
       const strip = document.createElement('div');
       strip.className = 'emoji-strip';
       strip.style.gap = gap + 'px';
@@ -151,10 +181,7 @@ function fadeOutEmojiMarquee() {
 }
 
 // ─── LIQUID GLASS REFRACTION (Chromium only) ────────────
-// Generates a displacement map (R = x-shift, G = y-shift) and feeds it to
-// the #lg-refract SVG filter, used as backdrop-filter on the landing card.
-// Safari/Firefox don't support SVG filters in backdrop-filter → they keep
-// the frosted-blur fallback. Pattern from github.com/archisvaze/liquid-glass.
+// Displacement map: R = x-shift, G = y-shift → #lg-refract backdrop-filter.
 (function initLiquidRefraction() {
   const chromium = 'chrome' in window &&
     (CSS.supports('backdrop-filter', 'url(#lg-refract)') ||
@@ -179,13 +206,8 @@ function fadeOutEmojiMarquee() {
   document.getElementById('landing-card').classList.add('lg-refract');
 })();
 
-// ─── CANVAS INIT — vector strokes + view transform ─────
-// Strokes are VECTOR data in a fixed REFERENCE space (the window size at
-// first load). The canvas bitmap is only a VIEW: it always fills the
-// window, and a uniform view transform (scale + centering) maps reference
-// coords → screen. The drawing never stretches, and the whole screen is
-// always drawable. Pixels only matter for display and the JPEG sent to
-// the AI — everything else (undo, erase, save) operates on vectors.
+// ─── CANVAS — reference space + view transform ──────────
+// Strokes live in fixed REF_W×REF_H coords; view transform maps them to the window bitmap.
 const REF_W = window.innerWidth;
 const REF_H = window.innerHeight;
 const view  = { s: 1, ox: 0, oy: 0 };
@@ -194,10 +216,9 @@ function applyViewTransform(ctx) {
   ctx.setTransform(view.s, 0, 0, view.s, view.ox, view.oy);
 }
 
-// Bitmap = window size; view maps reference space into it, centered.
 function resizeCanvasToWindow() {
   [drawCanvas, blinkCanvas].forEach(c => {
-    c.width  = window.innerWidth;   // also clears bitmap + resets transform
+    c.width  = window.innerWidth;
     c.height = window.innerHeight;
   });
   view.s  = Math.min(window.innerWidth / REF_W, window.innerHeight / REF_H);
@@ -208,8 +229,7 @@ function resizeCanvasToWindow() {
 }
 resizeCanvasToWindow();
 
-// Element-relative CSS px → reference-space coords (handles the chat-open
-// CSS scaling of the element AND the view transform)
+// CSS px → reference coords (accounts for chat-open scale + view transform)
 function eventToRef(cssX, cssY) {
   const r  = drawCanvas.getBoundingClientRect();
   const px = cssX * (drawCanvas.width  / r.width);
@@ -217,16 +237,14 @@ function eventToRef(cssX, cssY) {
   return { x: (px - view.ox) / view.s, y: (py - view.oy) / view.s };
 }
 
-// Chat-open: shrink canvas into the area not covered by the dialog
-// (landscape → left 50%; portrait → top 35%), centered, aspect kept.
-// Computed from the canvas's ACTUAL current rect, so it works after resizes.
+// Shrink canvas into the area beside/above the chat dialog.
 function layoutMiniCanvas() {
   const portrait = window.innerHeight > window.innerWidth;
   const area = portrait
     ? { w: window.innerWidth,       h: window.innerHeight * 0.35 }
     : { w: window.innerWidth * 0.5, h: window.innerHeight };
   const pad  = 10;
-  const cssW = drawCanvas.width, cssH = drawCanvas.height; // element = bitmap size
+  const cssW = drawCanvas.width, cssH = drawCanvas.height;
   const s    = Math.min((area.w - pad * 2) / cssW, (area.h - pad * 2) / cssH);
   const tx = (area.w - cssW * s) / 2;
   const ty = (area.h - cssH * s) / 2;
@@ -256,45 +274,41 @@ let drawingDataURL = null;
 let bgRafId      = null;
 let currentBgHex = null;
 
-// Chat session tracking
 let chatCount         = 0;
 let totalDialogOpens  = 0;
 let cityRevealed      = false;
-let userResponseCount = 0;  // user must reply ≥1 time before auto-reveal fires
+let userResponseCount = 0;
 
-// Session save tracking
-let drawingPhaseStart    = null;  // timestamp when current drawing phase began
-let drawingAccumMs       = 0;     // cumulative ms spent drawing (across all drawing phases)
-let chatPhaseStart       = null;  // timestamp when current chat phase began
-let chatAccumMs          = 0;     // cumulative ms spent in chat (across all chat phases)
-let dbSessionId          = null;  // returned from /session-complete, used for /spotify-opened + /rate
-let lastSongData         = null;  // stores most recent song result for /session-complete payload
+let drawingPhaseStart    = null;
+let drawingAccumMs       = 0;
+let chatPhaseStart       = null;
+let chatAccumMs          = 0;
+let dbSessionId          = null;
+let lastSongData         = null;
 
 // ─── BEHAVIORAL TELEMETRY ───────────────────────────────
 const _bgStartTime = Date.now();
 let _lastStrokeEndTime  = null;
-let _strokeDrawMs       = 0;   // cumulative ms actively drawing
+let _strokeDrawMs       = 0;
 let _strokeStartTime    = null;
 
 const telemetry = {
-  colorLockTime:    null,  // seconds: how long to confirm background
-  colorAdjustments: 0,     // # of color-picker changes after locking bg
-  penSizeChanges:   0,     // # of pen slider adjustments
-  drawDurationSec:  0,     // total seconds of active drawing
-  totalStrokes:     0,     // pen + eraser strokes
-  undoCount:        0,     // # of undo actions
-  eraserStrokes:    0,     // # of eraser strokes
-  drawingCoverage:  0,     // fraction of canvas with non-bg pixels (computed at open)
-  idleGaps:         0,     // pauses > 5s between strokes
-  sessionOpenCount: 0,     // how many times chat opened (filled at open time)
-  browserLanguage:  navigator.language || null,  // e.g. "zh-TW", "en-US", "ko-KR"
+  colorLockTime:    null,
+  colorAdjustments: 0,
+  penSizeChanges:   0,
+  drawDurationSec:  0,
+  totalStrokes:     0,
+  undoCount:        0,
+  eraserStrokes:    0,
+  drawingCoverage:  0,
+  idleGaps:         0,
+  sessionOpenCount: 0,
+  browserLanguage:  navigator.language || null,
 };
 
 // ─── PEN / ERASER SIZE ──────────────────────────────────
-// Pen width lives in REFERENCE units (the view transform scales it on
-// screen). Scale off the shorter dimension; 4px floor for phones.
 function calcBasePenWidth() {
-  return Math.max(4, Math.min(REF_W, REF_H) / 160);
+  return Math.max(4, Math.min(REF_W, REF_H) / 140);
 }
 let basePenWidth = calcBasePenWidth();
 
@@ -313,17 +327,11 @@ penSlider.value    = rawToSlider(penSizeRaw);
 eraserSlider.value = rawToSlider(eraserSizeRaw);
 
 // ─── STROKE HISTORY ─────────────────────────────────────
-// All coordinates are in canvas-internal pixels (stable — canvas never resizes).
-// Pen strokes: no color/width stored → always render at current penColor +
-// penWidth(). ONE uniform pen width on screen by design: moving the slider
-// resizes existing strokes along with future ones.
-// Eraser strokes: width stored in canvas pixels.
 let strokes       = [];
 let currentStroke = null;
 const MAX_UNDO    = 10;
 const undoStack   = [];
 
-// Eye animation progress
 let eyeDrawnLeftLen  = 0;
 let eyeDrawnRightLen = 0;
 
@@ -371,27 +379,22 @@ function redrawAll() {
   drawCtx.setTransform(1, 0, 0, 1, 0, 0);
   drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
   applyViewTransform(drawCtx);
-  // Eye animation in progress — draw directly from SVG (no CSS transform active during anim)
   if (eyeDrawnLeftLen > 0 || eyeDrawnRightLen > 0) {
     setupLineCtx(penColor, penWidth());
     drawEyeFull(eyeLeft,  eyeDrawnLeftLen);
     drawEyeFull(eyeRight, eyeDrawnRightLen);
   }
-  // All strokes (eyes baked in as regular strokes)
   for (const s of strokes) renderStroke(s);
   drawCtx.globalCompositeOperation = 'source-over';
 }
 
-// ─── WINDOW RESIZE ──────────────────────────────────────
-// Canvas resolution is FIXED. Only CSS scaling changes on resize.
-// basePenWidth recalculates so pen/eraser feel the same relative to window.
 window.addEventListener('resize', () => {
   stopHintAnimation();
-  if (phase === 'color-select') buildEmojiMarquee(); // refit landing marquee
+  if (phase === 'color-select') buildEmojiMarquee();
   if (document.body.classList.contains('chat-open')) {
-    layoutMiniCanvas();       // keep mini canvas in place
+    layoutMiniCanvas();
   } else {
-    resizeCanvasToWindow();   // bitmap follows window; strokes re-render below
+    resizeCanvasToWindow();
   }
   closeAllPopups();
   redrawAll();
@@ -446,17 +449,13 @@ function updatePenFromRgb(r, g, b) {
   }
 }
 
-// ─── BACKGROUND ANIMATION ───────────────────────────────
-// Current gradient stops — single source of truth for body/html background
-// AND the merged JPEG sent to the AI
+// ─── BACKGROUND ─────────────────────────────────────────
 let bgStops = ['#888', '#888'];
 
 function setBackground(c1, c2) {
   bgStops = [c1, c2];
   const bg = `linear-gradient(135deg, ${c1}, ${c2})`;
   document.body.style.background = bg;
-  // Paint the root too — fills under iOS status bar / home indicator and
-  // overscroll areas, so no white or repeated-gradient strips appear
   document.documentElement.style.background = bg;
 }
 
@@ -481,10 +480,10 @@ startBgAnimation();
 document.body.addEventListener('click', e => {
   if (phase !== 'color-select') return;
   bgConfirmed = true;
-  telemetry.colorLockTime = Math.round((Date.now() - _bgStartTime) / 100) / 10; // 1 decimal
+  telemetry.colorLockTime = Math.round((Date.now() - _bgStartTime) / 100) / 10;
   cancelAnimationFrame(bgRafId);
   phase = 'drawing';
-  drawingPhaseStart = Date.now(); // start drawing timer
+  drawingPhaseStart = Date.now();
   colorHint.style.opacity = '0';
   setTimeout(() => { colorHint.style.display = 'none'; }, 400);
   fadeOutEmojiMarquee();
@@ -494,8 +493,6 @@ document.body.addEventListener('click', e => {
 
 colorInput.addEventListener('input', e => {
   currentBgHex = e.target.value;
-  // Manual pick → same gradient feel as the auto background: pair the
-  // chosen colour with a similar one (hue +30°, slightly darker)
   const [h, s, l] = hexToHsl(currentBgHex);
   const c2 = `hsl(${Math.round((h + 30) % 360)}, ${Math.round(s)}%, ${Math.round(Math.max(0, l - 8))}%)`;
   setBackground(currentBgHex, c2);
@@ -509,11 +506,11 @@ let eyeAnimFrame = 0;
 const EYE_FRAMES = 40;
 const EYE_GAP    = 5;
 
-// Convert SVG-space point → reference-space coords.
+// SVG point → reference coords via getScreenCTM()
 function svgPtToCanvas(pt) {
   const sp = hintEyes.createSVGPoint();
   sp.x = pt.x; sp.y = pt.y;
-  const vp   = sp.matrixTransform(hintEyes.getScreenCTM()); // viewport coords
+  const vp   = sp.matrixTransform(hintEyes.getScreenCTM());
   const rect = drawCanvas.getBoundingClientRect();
   return eventToRef(vp.x - rect.left, vp.y - rect.top);
 }
@@ -532,7 +529,7 @@ function drawEyeFull(pathEl, totalLen) {
   drawCtx.stroke();
 }
 
-// Bake a completed eye path into absolute canvas-internal coords
+// Sample SVG path into a pen stroke in reference coords
 function bakeEyeStroke(pathEl, totalLen) {
   if (totalLen <= 0) return null;
   const samples = Math.ceil(totalLen / 3);
@@ -583,15 +580,14 @@ function animateEyeOnCanvas() {
     eyeAnimId = requestAnimationFrame(animateEyeOnCanvas);
   } else {
     eyeAnimId = null;
-    // Bake eye paths into strokes[] — treated as regular user strokes from here on
-    saveUndo(); // allow undoing the eye hint as a unit
+    saveUndo();
     const ls = bakeEyeStroke(eyeLeft,  eyeDrawnLeftLen);
     const rs = bakeEyeStroke(eyeRight, eyeDrawnRightLen);
     if (ls) strokes.push(ls);
     if (rs) strokes.push(rs);
     eyeDrawnLeftLen = 0; eyeDrawnRightLen = 0;
     eyeStrokes = [ls, rs].filter(Boolean);
-    scheduleBlink();
+    schedulePostEyeSequence();
   }
 }
 
@@ -603,7 +599,6 @@ function startHintAnimation() {
 function stopHintAnimation() {
   if (eyeAnimId) {
     cancelAnimationFrame(eyeAnimId); eyeAnimId = null;
-    // Bake whatever was drawn before stop into strokes[] like a regular stroke
     if (eyeDrawnLeftLen > 0 || eyeDrawnRightLen > 0) {
       const ls = bakeEyeStroke(eyeLeft,  eyeDrawnLeftLen);
       const rs = bakeEyeStroke(eyeRight, eyeDrawnRightLen);
@@ -614,16 +609,58 @@ function stopHintAnimation() {
   }
 }
 
-// ─── BLINK — squash the eye strokes vertically ──────────
-// A real blink: eye height 100% → 30% → 100%, width fixed.
-// Works directly on the baked vector strokes, no overlay drawing.
+// ─── DRAW HINT + BLINK ──────────────────────────────────
+const DRAW_HINT_DELAY_MS   = 1500;
+const FIRST_BLINK_DELAY_MS = 3000;
+const BLINK_INTERVAL_MIN   = 2000;
+const BLINK_INTERVAL_MAX   = 4000;
+
+let drawHintTimer  = null;
+let firstBlinkTimer = null;
+
+function isTouchDevice() {
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+}
+
+function showDrawHint() {
+  if (hasDrawn || phase !== 'drawing') return;
+  drawHintEl.textContent = isTouchDevice() ? UI.drawHintTouch : UI.drawHintMouse;
+  drawHintEl.style.visibility = 'visible';
+  drawHintEl.style.opacity = '1';
+}
+
+function fadeOutDrawHint() {
+  drawHintEl.style.opacity = '0';
+  setTimeout(() => {
+    if (drawHintEl.style.opacity === '0') drawHintEl.style.visibility = 'hidden';
+  }, 400);
+}
+
+function clearDrawHintTimers(hideHint = true) {
+  clearTimeout(drawHintTimer);  drawHintTimer  = null;
+  clearTimeout(firstBlinkTimer); firstBlinkTimer = null;
+  if (hideHint) fadeOutDrawHint();
+}
+
+function schedulePostEyeSequence() {
+  if (hasDrawn || phase !== 'drawing') return;
+  clearDrawHintTimers(false);
+  drawHintTimer = setTimeout(showDrawHint, DRAW_HINT_DELAY_MS);
+  firstBlinkTimer = setTimeout(() => {
+    firstBlinkTimer = null;
+    if (hasDrawn || phase !== 'drawing' || eyeStrokes.length === 0) return;
+    blinkEyes();
+  }, FIRST_BLINK_DELAY_MS);
+}
+
+// ─── BLINK ──────────────────────────────────────────────
+// Squash eye strokes vertically: 100% → 30% → 100% (double cycle via |sin(2πt)|).
 let blinkTimer  = null;
 let blinkRafId  = null;
-let eyeStrokes  = [];   // references to the baked eye strokes
+let eyeStrokes  = [];
 
 function blinkEyes() {
   if (hasDrawn || phase !== 'drawing' || eyeStrokes.length === 0) return;
-  // Vertical center of each eye (reference space)
   const centers = eyeStrokes.map(s => {
     let minY = Infinity, maxY = -Infinity;
     for (const p of s.points) {
@@ -632,12 +669,11 @@ function blinkEyes() {
     }
     return (minY + maxY) / 2;
   });
-  const DUR   = 600;  // ms: double blink (two close-reopen cycles)
+  const DUR   = 600;
   const start = performance.now();
 
   const step = now => {
     const t = Math.min(1, (now - start) / DUR);
-    // |sin(2πt)| gives two full cycles: 100% → 30% → 100% → 30% → 100%
     const k = 1 - 0.7 * Math.abs(Math.sin(2 * Math.PI * t));
     drawCtx.setTransform(1, 0, 0, 1, 0, 0);
     drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
@@ -646,7 +682,6 @@ function blinkEyes() {
       const i = eyeStrokes.indexOf(s);
       if (i === -1) { renderStroke(s); continue; }
       const cy = centers[i];
-      // Squash y about the eye's own center — x (width) stays fixed
       renderStroke({ ...s, points: s.points.map(p => ({ x: p.x, y: cy + (p.y - cy) * k })) });
     }
     if (t < 1) {
@@ -661,14 +696,16 @@ function blinkEyes() {
 
 function scheduleBlink() {
   if (hasDrawn || phase !== 'drawing') return;
-  blinkTimer = setTimeout(blinkEyes, 2000 + Math.random() * 2000);
+  blinkTimer = setTimeout(blinkEyes,
+    BLINK_INTERVAL_MIN + Math.random() * (BLINK_INTERVAL_MAX - BLINK_INTERVAL_MIN));
 }
 
 function stopBlink() {
   clearTimeout(blinkTimer); blinkTimer = null;
+  clearDrawHintTimers();
   if (blinkRafId) {
     cancelAnimationFrame(blinkRafId); blinkRafId = null;
-    redrawAll(); // restore eyes fully open
+    redrawAll();
   }
 }
 
@@ -724,7 +761,7 @@ penSlider.addEventListener('input', () => {
   penSizeRaw = sliderToRaw(parseInt(penSlider.value));
   localStorage.setItem('penSizeRaw', penSizeRaw);
   telemetry.penSizeChanges++;
-  redrawAll(); // one uniform width on screen — resize existing strokes too
+  redrawAll();
 });
 
 eraserSlider.addEventListener('input', () => {
@@ -748,7 +785,6 @@ document.addEventListener('keydown', e => {
 });
 
 // ─── DRAWING ────────────────────────────────────────────
-// getPos converts event coords → reference-space coords
 function getPos(e) {
   if (e.touches && e.touches.length > 0) {
     const rect = drawCanvas.getBoundingClientRect();
@@ -761,11 +797,10 @@ function getPos(e) {
 function pointerDown(e) {
   if (phase !== 'drawing') return;
   closeAllPopups(); stopBlink();
-  saveUndo();          // snapshot before eye strokes (if mid-animation) land in strokes[]
-  stopHintAnimation(); // stop & bake any partial eye into strokes[]
+  saveUndo();
+  stopHintAnimation();
   hideCompleteBtn();
 
-  // Telemetry: detect idle gap > 5s between strokes
   if (_lastStrokeEndTime && (Date.now() - _lastStrokeEndTime) > 5000) {
     telemetry.idleGaps++;
   }
@@ -819,7 +854,6 @@ function pointerUp(e) {
   isDrawing = false; lastPoint = null; lastMid = null;
   hasDrawn = true;
 
-  // Telemetry: accumulate drawing time + stroke counts
   if (_strokeStartTime) {
     _strokeDrawMs += Date.now() - _strokeStartTime;
     _strokeStartTime = null;
@@ -860,7 +894,6 @@ function captureMergedCanvas() {
   const merged = document.createElement('canvas');
   merged.width = drawCanvas.width; merged.height = drawCanvas.height;
   const mCtx = merged.getContext('2d');
-  // Same gradient the user sees (auto hue or manually picked pair)
   const grad = mCtx.createLinearGradient(0, 0, merged.width, merged.height);
   grad.addColorStop(0, bgStops[0]);
   grad.addColorStop(1, bgStops[1]);
@@ -869,11 +902,11 @@ function captureMergedCanvas() {
   return merged.toDataURL('image/jpeg', 0.85);
 }
 
-// Estimate fraction of canvas covered by non-transparent pixels (sampled for speed)
+// Sampled pixel coverage estimate (step=8 for speed)
 function computeDrawingCoverage() {
   try {
     const W = drawCanvas.width, H = drawCanvas.height;
-    const step = 8; // sample every 8th pixel
+    const step = 8;
     const data = drawCtx.getImageData(0, 0, W, H).data;
     let covered = 0, total = 0;
     for (let y = 0; y < H; y += step) {
@@ -891,7 +924,6 @@ async function openChat() {
   if (cityRevealed) return;
   phase = 'chat';
   totalDialogOpens++;
-  // Pause drawing timer, start chat timer
   if (drawingPhaseStart) { drawingAccumMs += Date.now() - drawingPhaseStart; drawingPhaseStart = null; }
   chatPhaseStart = Date.now();
   chatCount = 0;
@@ -903,19 +935,20 @@ async function openChat() {
   toolbar.style.display = 'none';
   document.body.classList.add('chat-open');
   layoutMiniCanvas();
-  requestAnimationFrame(() => chatDialog.classList.add('open'));
+  requestAnimationFrame(() => {
+    chatDialog.classList.add('open');
+    chatInput.focus();
+  });
 
   const initMsg = totalDialogOpens > 1
     ? 'I updated my drawing — take a look at what I added.'
     : 'analyze_drawing';
 
-  // Finalize telemetry snapshot on first open
   const payload = { message: initMsg, session_id: SESSION_ID, image: drawingDataURL };
   if (totalDialogOpens === 1) {
     telemetry.drawDurationSec  = Math.round(_strokeDrawMs / 100) / 10;
     telemetry.drawingCoverage  = computeDrawingCoverage();
     telemetry.sessionOpenCount = totalDialogOpens;
-    // Derived ratios (rounded to 2dp)
     const t = { ...telemetry };
     t.undoRatio   = t.totalStrokes > 0 ? Math.round(t.undoCount   / t.totalStrokes * 100) / 100 : 0;
     t.eraserRatio = t.totalStrokes > 0 ? Math.round(t.eraserStrokes / t.totalStrokes * 100) / 100 : 0;
@@ -935,7 +968,6 @@ async function openChat() {
     chatCount++;
     const bridgingPhrases = /on it|searching now|let me find|i'll find|give me a (second|moment)|let me pull|let me grab a.*track|grab a.*track|pulling it up/i;
     const impliedReady = !data.ready && !data.playlist && bridgingPhrases.test(data.reply);
-    // Auto-reveal only after user has replied at least once
     if (data.playlist && userResponseCount >= 1) {
       setTimeout(fetchPlaylists, 600);
     } else if ((data.ready || impliedReady || chatCount >= 4) && userResponseCount >= 1) {
@@ -947,17 +979,16 @@ async function openChat() {
   }
 }
 
-// ─── CLOSE CHAT → BACK TO DRAWING ───────────────────────
+// ─── CLOSE CHAT ─────────────────────────────────────────
 closeChatBtn.addEventListener('click', () => {
   chatDialog.classList.remove('open');
   document.body.classList.remove('chat-open');
   phase = 'drawing';
   restoreCanvasLayout();
-  resizeCanvasToWindow(); // window may have resized while chat was open
+  resizeCanvasToWindow();
   redrawAll();
   toolbar.style.display = 'flex';
   resetIdleTimer();
-  // Pause chat timer, resume drawing timer
   if (chatPhaseStart) { chatAccumMs += Date.now() - chatPhaseStart; chatPhaseStart = null; }
   drawingPhaseStart = Date.now();
 });
@@ -968,7 +999,7 @@ async function sendChat() {
   if (!msg || phase !== 'chat') return;
   chatInput.value = '';
   userResponseCount++;
-  cityBtn.classList.add('ready'); // light up city button after first reply
+  songBtn.classList.add('ready');
   addMsg('user', msg);
   const typing = addMsg('ai', '…', true);
   try {
@@ -980,7 +1011,6 @@ async function sendChat() {
     typing.classList.remove('typing');
     typing.textContent = data.reply;
     chatCount++;
-    // Detect if AI said bridging phrase but forgot READY:true (model reliability fallback)
     const bridgingPhrases = /on it|searching now|let me find|i'll find|give me a (second|moment)|let me pull|let me grab a.*track|grab a.*track|pulling it up/i;
     const impliedReady = !data.ready && !data.playlist && bridgingPhrases.test(data.reply);
     if (data.playlist && userResponseCount >= 1) {
@@ -994,17 +1024,14 @@ async function sendChat() {
   }
 }
 
-// ─── MOBILE KEYBOARD — keep layout still, lift only the input row ──
-// iOS Safari overlays the keyboard and pans the page to reveal the input,
-// which makes the whole screen jump. Instead: pin the page and add
-// padding-bottom to the dialog (flex column) so just the input row rises.
+// Pin page and pad dialog bottom so only the input row lifts above the keyboard.
 if (window.visualViewport) {
   const vv = window.visualViewport;
   const onVVChange = () => {
     const kb = Math.max(0, Math.round(window.innerHeight - vv.height));
     chatDialog.style.paddingBottom = kb > 0 ? kb + 'px' : '';
     if (kb > 0) {
-      window.scrollTo(0, 0);                    // undo Safari's auto-pan
+      window.scrollTo(0, 0);
       chatMsgs.scrollTop = chatMsgs.scrollHeight;
     }
   };
@@ -1014,27 +1041,24 @@ if (window.visualViewport) {
 
 sendBtn.addEventListener('click', sendChat);
 chatInput.addEventListener('keydown', e => {
-  // e.isComposing is true while IME (Chinese/Japanese/Korean) is composing —
-  // ignore Enter during composition so it only confirms the character, not sends
+  // Ignore Enter during IME composition (CJK input)
   if (e.key === 'Enter' && !e.isComposing) sendChat();
 });
 
-// City button — always visible, triggers reveal immediately using whatever AI knows so far
-cityBtn.addEventListener('click', () => {
+songBtn.addEventListener('click', () => {
   if (cityRevealed) return;
   fetchSong();
 });
 
-// ─── SESSION COMPLETE — save to DB after song reveal ────
+// ─── SESSION COMPLETE ───────────────────────────────────
 async function saveSession(songData) {
   try {
     const t = { ...telemetry };
     t.undoRatio   = t.totalStrokes > 0 ? Math.round(t.undoCount   / t.totalStrokes * 100) / 100 : 0;
     t.eraserRatio = t.totalStrokes > 0 ? Math.round(t.eraserStrokes / t.totalStrokes * 100) / 100 : 0;
-    t.sessionOpenCount = totalDialogOpens; // final count, not the first-open snapshot
+    t.sessionOpenCount = totalDialogOpens;
     delete t.undoCount; delete t.eraserStrokes; delete t.totalStrokes;
 
-    // Finalize chat timer (we're in chat phase when song reveals)
     const finalChatMs = chatAccumMs + (chatPhaseStart ? Date.now() - chatPhaseStart : 0);
 
     const payload = {
@@ -1043,9 +1067,8 @@ async function saveSession(songData) {
       conversation_duration_sec: Math.round(finalChatMs / 1000),
       device_type:               /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'mobile' : 'desktop',
       user_timezone:             Intl.DateTimeFormat().resolvedOptions().timeZone,
-      // Primary gradient stop (hex if manually picked, hsl if auto hue)
       bg_color:             bgStops[0],
-      canvas_width:         REF_W,   // stroke coordinate space (reference)
+      canvas_width:         REF_W,
       canvas_height:        REF_H,
       strokes:              strokes,
       telemetry:            t,
@@ -1062,14 +1085,17 @@ async function saveSession(songData) {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    if (!data.db_session_id) throw new Error('Missing db_session_id');
     dbSessionId = data.db_session_id;
     console.log('[DB] session saved:', dbSessionId);
+    return true;
   } catch (err) {
     console.warn('[DB] session save failed:', err);
+    return false;
   }
 }
 
-// ─── STAR RATING — shown below song card ────────────────
+// ─── STAR RATING ────────────────────────────────────────
 function addStarRating() {
   const wrapper = document.createElement('div');
   wrapper.className = 'star-rating';
@@ -1094,6 +1120,7 @@ function addStarRating() {
         await fetch(`${API_BASE}/rate`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            session_id: SESSION_ID,
             db_session_id: dbSessionId,
             score,
             song:   lastSongData?.song   || null,
@@ -1108,7 +1135,7 @@ function addStarRating() {
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
 }
 
-// ─── SONG REVEAL — rendered as a card inside chat ───────
+// ─── SONG REVEAL ────────────────────────────────────────
 async function fetchSong() {
   if (cityRevealed) return;
   cityRevealed = true;
@@ -1122,31 +1149,15 @@ async function fetchSong() {
     const data = await res.json();
     typing.remove();
 
-    // Backend may return {error} (AI JSON parse fail / Spotify miss) —
-    // don't render an empty card, a null DB row, or a rating for nothing
     if (data.error || (!data.song && !data.spotify_url)) {
       console.warn('[song] result error:', data.error, data.raw);
       addMsg('ai', "Hmm, I couldn't lock in a song — ask me again in a sec?");
-      cityRevealed = false; // allow retry
+      cityRevealed = false;
       return;
     }
 
-    // Build song card as an AI chat bubble
-    const card = document.createElement('div');
-    card.className = 'msg ai city-card';
+    const card = buildSongCard(data);
 
-    const trackLabel = `${data.song || 'Your song'}${data.artist ? ` · ${data.artist}` : ''}`;
-
-    card.innerHTML = `
-      ${data.image ? `<a class="city-card-img-wrap"><img class="city-card-img" src="${data.image}" alt="${trackLabel}"></a>` : ''}
-      <div class="city-card-body">
-        <div class="city-card-name">${data.song || ''}</div>
-        <div class="city-card-artist">${data.artist || ''}</div>
-        <div class="city-card-reason">${data.reason || ''}</div>
-        ${data.spotify_url ? `<a class="city-card-spotify city-card-spotify-link" data-url="${data.spotify_url}">▶ Open in Spotify</a>` : ''}
-      </div>`;
-
-    // Intercept Spotify link — log opened, then navigate
     const spotifyLink = card.querySelector('.city-card-spotify-link');
     if (spotifyLink) {
       spotifyLink.style.cursor = 'pointer';
@@ -1155,15 +1166,14 @@ async function fetchSong() {
           try {
             await fetch(`${API_BASE}/spotify-opened`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ db_session_id: dbSessionId }),
+              body: JSON.stringify({ session_id: SESSION_ID, db_session_id: dbSessionId }),
             });
           } catch (e) { /* non-blocking */ }
         }
-        window.open(spotifyLink.dataset.url, '_blank', 'noopener');
+        window.open(spotifyLink.href, '_blank', 'noopener');
       });
     }
 
-    // Same intercept for album art link
     const imgWrap = card.querySelector('.city-card-img-wrap');
     if (imgWrap && data.spotify_url) {
       imgWrap.style.cursor = 'pointer';
@@ -1173,28 +1183,24 @@ async function fetchSong() {
     chatMsgs.appendChild(card);
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
 
-    // Save session to DB (non-blocking)
     lastSongData = data;
-    saveSession(data);
+    const saved = await saveSession(data);
+    if (saved) addStarRating();
 
-    // Show star rating
-    addStarRating();
-
-    // Keep input alive — user can ask for another song
-    cityRevealed = false;  // allow re-trigger if AI outputs READY:true again
-    chatCount    = 0;      // reset so chatCount >= 4 fallback doesn't fire immediately
+    cityRevealed = false;
+    chatCount    = 0;
     chatInput.placeholder = UI.differentVibe;
 
   } catch (err) {
     const typing2 = document.querySelector('.msg.typing');
     if (typing2) typing2.textContent = 'Could not load song result.';
     else addMsg('ai', 'Could not load song result.');
-    cityRevealed = false; // allow retry
+    cityRevealed = false;
     console.error(err);
   }
 }
 
-// ─── PLAYLIST OPTIONS — 3 clickable cards inside chat ───
+// ─── PLAYLIST OPTIONS ───────────────────────────────────
 async function fetchPlaylists() {
   const typing = addMsg('ai', '…', true);
   try {
@@ -1210,22 +1216,16 @@ async function fetchPlaylists() {
       return;
     }
 
-    // Label bubble
     addMsg('ai', UI.playlistIntro);
 
-    // 3 option cards
     const container = document.createElement('div');
     container.className = 'playlist-options';
     data.playlists.forEach(pl => {
-      const card = document.createElement('div');
-      card.className = 'playlist-option';
-      card.innerHTML = `
-        ${pl.image ? `<img class="playlist-option-img" src="${pl.image}" alt="${pl.name}">` : ''}
-        <div class="playlist-option-body">
-          <div class="playlist-option-name">${pl.name}</div>
-          <div class="playlist-option-meta">${pl.tracks} songs · ${pl.owner}</div>
-        </div>`;
-      card.addEventListener('click', () => window.open(pl.spotify_url, '_blank'));
+      const card = buildPlaylistCard(pl);
+      const playlistUrl = safeHttpUrl(pl.spotify_url);
+      if (playlistUrl) {
+        card.addEventListener('click', () => window.open(playlistUrl, '_blank', 'noopener'));
+      }
       container.appendChild(card);
     });
     chatMsgs.appendChild(container);
@@ -1241,6 +1241,94 @@ async function fetchPlaylists() {
 }
 
 // ─── HELPERS ────────────────────────────────────────────
+function safeHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildSongCard(data) {
+  const card = document.createElement('div');
+  card.className = 'msg ai city-card';
+
+  const trackLabel = `${data.song || 'Your song'}${data.artist ? ` · ${data.artist}` : ''}`;
+  const imageUrl = safeHttpUrl(data.image);
+  const spotifyUrl = safeHttpUrl(data.spotify_url);
+
+  if (imageUrl) {
+    const imgWrap = document.createElement('a');
+    imgWrap.className = 'city-card-img-wrap';
+
+    const img = document.createElement('img');
+    img.className = 'city-card-img';
+    img.src = imageUrl;
+    img.alt = trackLabel;
+
+    imgWrap.appendChild(img);
+    card.appendChild(imgWrap);
+  }
+
+  const body = document.createElement('div');
+  body.className = 'city-card-body';
+
+  const name = document.createElement('div');
+  name.className = 'city-card-name';
+  name.textContent = data.song || '';
+
+  const artist = document.createElement('div');
+  artist.className = 'city-card-artist';
+  artist.textContent = data.artist || '';
+
+  const reason = document.createElement('div');
+  reason.className = 'city-card-reason';
+  reason.textContent = data.reason || '';
+
+  body.append(name, artist, reason);
+
+  if (spotifyUrl) {
+    const link = document.createElement('a');
+    link.className = 'city-card-spotify city-card-spotify-link';
+    link.href = spotifyUrl;
+    link.textContent = '▶ Open in Spotify';
+    body.appendChild(link);
+  }
+
+  card.appendChild(body);
+  return card;
+}
+
+function buildPlaylistCard(pl) {
+  const card = document.createElement('div');
+  card.className = 'playlist-option';
+
+  const imageUrl = safeHttpUrl(pl.image);
+  if (imageUrl) {
+    const img = document.createElement('img');
+    img.className = 'playlist-option-img';
+    img.src = imageUrl;
+    img.alt = pl.name || '';
+    card.appendChild(img);
+  }
+
+  const body = document.createElement('div');
+  body.className = 'playlist-option-body';
+
+  const name = document.createElement('div');
+  name.className = 'playlist-option-name';
+  name.textContent = pl.name || '';
+
+  const meta = document.createElement('div');
+  meta.className = 'playlist-option-meta';
+  meta.textContent = `${pl.tracks ?? 0} songs · ${pl.owner || ''}`;
+
+  body.append(name, meta);
+  card.appendChild(body);
+  return card;
+}
+
 function addMsg(role, text, isTyping = false) {
   const div = document.createElement('div');
   div.className = `msg ${role}${isTyping ? ' typing' : ''}`;

@@ -2,7 +2,7 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from dotenv import load_dotenv
-import os, json
+import os, json, time
 
 load_dotenv()
 
@@ -11,6 +11,9 @@ llm = ChatOpenAI(model="gpt-4o", temperature=0.85)
 
 # Store message history per session: { session_id: [HumanMessage, AIMessage, ...] }
 session_memories: dict[str, list] = {}
+session_last_seen: dict[str, float] = {}
+SESSION_TTL_SEC = int(os.getenv("SESSION_TTL_SEC", "7200"))
+MAX_SESSIONS = int(os.getenv("MAX_SESSIONS", "1000"))
 
 SYSTEM_PROMPT = """You are the personality oracle behind DrawToPlay — a playful app that matches people to a Spotify song based on a drawing they made and how they behaved while making it.
 
@@ -301,6 +304,7 @@ Write EXACTLY 2 sentences. No quotation marks around them.
 Use telemetry only as silent background context — never mention numbers or metrics out loud.
 
 LANGUAGE: If telemetry includes `browserLanguage`, use that language for ALL your replies in this session — including the opening message. Examples: "zh-TW" or "zh-HK" → Traditional Chinese, "zh-CN" → Simplified Chinese, "ko" → Korean, "ja" → Japanese, "en" → English. If browserLanguage is absent or "en", default to English. Never mention that you detected their language.
+The user's OWN messages override browserLanguage: as soon as the user writes in a different language or script, switch to that one for all subsequent replies. For Chinese, match the exact script — Traditional characters (愛/樂/說 → zh-TW) get Traditional replies, Simplified characters (爱/乐/说 → zh-CN) get Simplified replies. Never reply in Simplified to a Traditional-Chinese user or vice versa.
 
 WHEN READY (single song):
 Add ONE casual closing sentence telling the user you're going to find their song — then output READY:true on the next line.
@@ -317,27 +321,51 @@ PLAYLIST:true and READY:true are mutually exclusive — never output both in the
 
 
 def _parse_json_response(raw: str) -> dict:
-    """Robustly parse an LLM JSON reply: strip code fences, then fall back to
-    extracting the outermost {...} if the model added any surrounding text."""
+    """Parse an LLM JSON reply: strip markdown fences, then require valid JSON only."""
     content = raw.strip()
     if content.startswith("```"):
         content = content.split("```")[1]
         if content.startswith("json"):
             content = content[4:]
         content = content.strip()
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        start, end = content.find("{"), content.rfind("}")
-        if start != -1 and end > start:
-            return json.loads(content[start:end + 1])
-        raise
+    data = json.loads(content)
+    if not isinstance(data, dict):
+        raise ValueError("expected JSON object")
+    return data
+
+
+def _require_keys(data: dict, keys: tuple[str, ...]) -> dict:
+    missing = [k for k in keys if k not in data]
+    if missing:
+        raise ValueError(f"missing keys: {', '.join(missing)}")
+    return data
 
 
 def get_or_create_memory(session_id: str) -> list:
+    now = time.time()
+    expired = [
+        sid for sid, last_seen in session_last_seen.items()
+        if now - last_seen > SESSION_TTL_SEC
+    ]
+    for sid in expired:
+        session_memories.pop(sid, None)
+        session_last_seen.pop(sid, None)
+    if len(session_memories) >= MAX_SESSIONS and session_id not in session_memories:
+        oldest = min(session_last_seen, key=session_last_seen.get)
+        session_memories.pop(oldest, None)
+        session_last_seen.pop(oldest, None)
     if session_id not in session_memories:
         session_memories[session_id] = []
+    session_last_seen[session_id] = now
     return session_memories[session_id]
+
+
+def get_conversation(session_id: str) -> list:
+    """Session history as plain dicts for DB storage."""
+    return [
+        {"role": "user" if m.type == "human" else "assistant", "content": m.content}
+        for m in session_memories.get(session_id, [])
+    ]
 
 
 def chat(session_id: str, user_message: str, image_base64: str = None,
@@ -423,7 +451,10 @@ Respond with ONLY valid JSON — no markdown:
     response = llm.invoke(messages)
 
     try:
-        return _parse_json_response(response.content)
+        data = _require_keys(_parse_json_response(response.content), ("queries",))
+        if not isinstance(data["queries"], list) or not data["queries"]:
+            raise ValueError("queries must be a non-empty list")
+        return data
     except Exception as e:
         return {"error": str(e), "raw": response.content}
 
@@ -440,21 +471,27 @@ Respond with ONLY valid JSON — no markdown, no extra text:
   "ai_keywords": ["keyword1", "keyword2", "keyword3"],
   "ai_style_description": "One sentence describing what the person drew and how they drew it.",
   "user_like_likelihood": 7,
-  "language": "en"
+  "language": "zh-TW"
 }
 
 Rules:
 - ai_keywords: 3–6 short mood/style words inferred from the drawing + conversation (e.g. ["melancholic", "rainy", "introspective"])
 - ai_style_description: describe the drawing content + emotional tone in one plain sentence
 - user_like_likelihood: 1–10 estimate of how much the user would like the recommended song, inferred from their responses (enthusiasm, engagement, requests)
-- language: ISO 639-1 code of the language the user wrote in ("zh" for Chinese, "en" for English, "ko" for Korean, etc.)
+- language: BCP-47 tag of the language the USER wrote in. For Chinese, detect the script: Traditional characters (愛/樂/聽) → "zh-TW", Simplified (爱/乐/听) → "zh-CN". Other languages use the plain code: "en", "ko", "ja", etc. Judge from the user's own messages, not the assistant's.
 """)
 
     messages = [prompt] + history
     response = llm.invoke(messages)
 
     try:
-        return _parse_json_response(response.content)
+        data = _require_keys(
+            _parse_json_response(response.content),
+            ("ai_keywords", "ai_style_description", "user_like_likelihood", "language"),
+        )
+        if not isinstance(data["ai_keywords"], list):
+            raise ValueError("ai_keywords must be a list")
+        return data
     except Exception as e:
         return {"error": str(e), "raw": response.content}
 
@@ -467,7 +504,16 @@ def get_song_result(session_id: str) -> dict:
 LANGUAGE PRIORITY — check in this order:
 1. If the user explicitly requested a language (e.g. "give me an English song", "我想聽中文歌") → follow that strictly.
 2. If the user has been writing in Chinese OR requested Chinese music → translate the search_query INTO Chinese characters. Do NOT append "Chinese" to an English query — rewrite the whole query in Chinese. e.g. "heartbreak raining" → "心碎 雨天", "playful energetic" → "活潑 有活力". The query should read as natural Chinese music search terms.
-3. Otherwise → search in English as normal.
+   MATCH THE USER'S SCRIPT EXACTLY: if the user writes Traditional Chinese (zh-TW/zh-HK: 愛/樂/聽) the query MUST be in Traditional characters (美食 快樂); if Simplified (zh-CN: 爱/乐/听), use Simplified (美食 快乐). Spotify returns different catalogs per script, so never mix them.
+3. Otherwise → search in English as normal, unless the user's messages are in another language — then use that language.
+
+ARTIST RULE:
+- Fill "artist" ONLY if the user explicitly asked for a specific artist/singer in the conversation (e.g. "我想聽陳奕迅的歌", "play me some Adele").
+- Otherwise leave "artist" as "" — do NOT guess or invent an artist. The search will run on keywords instead.
+
+SEARCH QUERY RULE:
+- If an artist was explicitly requested → "search_query" = "song title artist name".
+- Otherwise → "search_query" = 2-4 mood/theme keywords in the user's language (per LANGUAGE PRIORITY above). Combine the emotional tone with the concrete subject of the drawing/conversation — e.g. cheerful drawing about craving food → "美食 快樂"; heartbreak in the rain → "心碎 雨天". No artist names, no invented song titles.
 
 Think about: tempo (fast/slow), energy level, emotional tone (happy/melancholic/tense/dreamy), genre feel.
 - High arousal, warm, expressive → upbeat, energetic, feel-good
@@ -485,16 +531,49 @@ Examples of good reason tones:
 
 Respond with ONLY a valid JSON object — no markdown, no extra text:
 {
-  "song": "Song Title",
-  "artist": "Artist Name",
+  "song": "Song Title (best guess — used only as a fallback search)",
+  "artist": "Artist Name if explicitly requested by the user, else empty string",
   "reason": "One warm, slightly cheeky sentence explaining why this song fits their mood",
-  "search_query": "song title artist name"
+  "search_query": "see SEARCH QUERY RULE"
 }""")
 
     messages = [song_prompt] + history
     response  = llm.invoke(messages)
 
     try:
-        return _parse_json_response(response.content)
+        return _require_keys(
+            _parse_json_response(response.content),
+            ("song", "artist", "reason", "search_query"),
+        )
     except Exception as e:
         return {"error": str(e), "raw": response.content}
+
+
+def score_song_candidates(session_id: str, candidates: list) -> list:
+    """One LLM call: score 0-1 how well each candidate track fits the session's mood."""
+    history = get_or_create_memory(session_id)
+    catalog = "\n".join(
+        f'{i + 1}. "{c["name"]}" by {c["artist"]} — genres: {", ".join(c.get("genres") or []) or "unknown"}; album: {c["album"]}'
+        for i, c in enumerate(candidates)
+    )
+    prompt = SystemMessage(content=f"""Based on the conversation, drawing, and behavioral signals observed so far, rate how well EACH candidate song below fits this person's current mood and scenario.
+
+CANDIDATES:
+{catalog}
+
+Judge by title meaning, artist genres, and overall vibe against the person's emotional tone, energy level, and the themes they talked about. e.g. a cheerful food-craving mood matches playful upbeat tracks about enjoyment, not aggressive breakup ballads.
+
+Respond with ONLY a valid JSON object — no markdown, no extra text:
+{{"scores": [score for candidate 1, score for candidate 2, ...]}}
+Each score is a number between 0.0 (totally wrong scenario) and 1.0 (perfect fit).""")
+
+    response = llm.invoke([prompt] + history)
+    try:
+        data = _require_keys(_parse_json_response(response.content), ("scores",))
+        scores = [float(s) for s in data["scores"]]
+    except Exception as e:
+        print(f"[Agent] candidate scoring failed: {e}")
+        scores = []
+    scores = scores[:len(candidates)]
+    scores += [0.0] * (len(candidates) - len(scores))
+    return scores

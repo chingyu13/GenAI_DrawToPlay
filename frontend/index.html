@@ -2,27 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <!-- viewport-fit=cover: extend page under notch/home bar (no white/odd strips)
-       interactive-widget=resizes-visual: Chrome/Firefox keep layout when keyboard opens (Safari ignores; handled via visualViewport in app.js) -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual" />
   <title>DrawToPlay</title>
-  <!-- Cute rounded fonts: Sniglet (Latin) + Huninn 粉圓體 (Traditional Chinese) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sniglet&family=Huninn&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Landing middle layer: hand-drawn emojis scrolling left→right (built by JS) -->
   <div id="emoji-marquee" aria-hidden="true"></div>
 
-  <!-- Drawing canvas (user draws here) -->
-  <canvas id="drawing-canvas"></canvas>
+  <canvas id="drawing-canvas" role="img" aria-label="Drawing canvas"></canvas>
+  <canvas id="blink-canvas" aria-hidden="true"></canvas>
 
-  <!-- Blink overlay canvas (sits above drawing, pointer-events:none) -->
-  <canvas id="blink-canvas"></canvas>
-
-  <!-- Eye hint SVG overlay (phase 2, animates stroke-by-stroke) -->
   <svg id="hint-eyes"
        viewBox="100 305 205 90"
        style="--eyes-width: 23.9147vw; --eyes-stroke-width: 15.82;"
@@ -39,7 +31,8 @@
          c-12.5,5.1-6.6,11.5,0.3,22.5"/>
   </svg>
 
-  <!-- Liquid Glass refraction filter (Chromium only; map filled by JS) -->
+  <p id="draw-hint" aria-hidden="true"></p>
+
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <filter id="lg-refract" x="0" y="0" width="100%" height="100%">
       <feImage id="lg-map" href="" preserveAspectRatio="none" result="map"/>
@@ -48,7 +41,6 @@
     </filter>
   </svg>
 
-  <!-- Phase 1: landing card (liquid glass) + tap to confirm color -->
   <div id="color-hint">
     <div id="landing-card">
       <p id="landing-tagline"></p>
@@ -56,64 +48,53 @@
     </div>
   </div>
 
-  <!-- Drawing toolbar (phase 2+) — landscape: bottom-right col; portrait: bottom-center row -->
   <div id="toolbar">
-    <!-- Color picker -->
-    <div class="tool-btn" id="color-btn" title="Color">
+    <div class="tool-btn" id="color-btn" title="Color" role="button" tabindex="0" aria-label="Choose color">
       <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true">
         <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
       </svg>
-      <input type="color" id="color-input" />
+      <input type="color" id="color-input" aria-label="Pen color" />
     </div>
-    <!-- Undo -->
-    <button class="tool-btn" id="undo-btn" title="Undo">
+    <button class="tool-btn" id="undo-btn" title="Undo" aria-label="Undo">
       <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true">
         <path d="M12.5 8c-2.65 0-5.05 1-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>
       </svg>
     </button>
-    <!-- Pen (with size popup) -->
-    <button class="tool-btn" id="pen-btn" title="Pen">
+    <button class="tool-btn" id="pen-btn" title="Pen" aria-label="Pen">
       <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true">
         <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
       </svg>
     </button>
-    <!-- Eraser (with size popup) -->
-    <button class="tool-btn" id="eraser-btn" title="Eraser">
+    <button class="tool-btn" id="eraser-btn" title="Eraser" aria-label="Eraser">
       <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true">
         <path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.78-.78 2.05 0 2.83L5.03 20H20v-2h-8.6l-2.06-2.06 7.07-7.07 2.83 2.83-4.24 4.24 1.42 1.41 4.24-4.24c.78-.78.78-2.05 0-2.83l-4.11-4.11c-.39-.39-.9-.59-1.41-.59z"/>
       </svg>
     </button>
   </div>
 
-  <!-- Pen size popup slider -->
   <div id="pen-popup" class="size-popup">
     <input type="range" id="pen-slider" min="0" max="100" />
   </div>
-  <!-- Eraser size popup slider -->
   <div id="eraser-popup" class="size-popup">
     <input type="range" id="eraser-slider" min="0" max="100" />
   </div>
 
-  <!-- Completed button (appears after 3s idle, only after drawing starts) -->
   <button id="complete-btn">Completed ✓</button>
 
-  <!-- Phase 3: chat dialog — slides in from right (landscape) or bottom (portrait) -->
-  <!-- Canvas stays visible behind it, scaled down via body.chat-open class -->
-  <div id="chat-dialog">
-    <button id="close-chat-btn" title="Back to drawing">✕</button>
+  <div id="chat-dialog" role="dialog" aria-modal="true" aria-label="Chat">
+    <button id="close-chat-btn" title="Back to drawing" aria-label="Back to drawing">✕</button>
     <div id="chat-messages"></div>
     <div id="chat-input-row">
-      <button id="city-btn" title="Reveal my city">
+      <button id="song-btn" title="Match my song" aria-label="Match my song">
         <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
-          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
         </svg>
       </button>
       <input id="chat-input" type="text" placeholder="Type here…" autocomplete="off" />
-      <button id="send-btn">↑</button>
+      <button id="send-btn" aria-label="Send message">↑</button>
     </div>
   </div>
 
-  <!-- City reveal card (shown after chat, replaces dialog) -->
   <div id="city-reveal">
     <div id="city-reveal-card">
       <img id="city-reveal-img" alt="" />

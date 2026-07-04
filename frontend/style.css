@@ -5,37 +5,24 @@ html, body {
   overflow: hidden;
   font-family: 'Sniglet', 'Huninn', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
-/* Mobile keyboard fix: keep body (and its gradient) at the LARGE viewport
-   height so opening the keyboard doesn't compress the whole background.
-   Fixed-position UI (chat dialog/input) still tracks the shrunken viewport,
-   so the input stays visible above the keyboard. */
+/* Mobile keyboard: body stays at large viewport height so the gradient doesn't compress. */
 body { height: 100lvh; }
 
 /* ── Canvases ── */
 #drawing-canvas {
   position: fixed; top: 0; left: 0;
-  /* bitmap always = window size (JS resizeCanvasToWindow); strokes are
-     vectors re-rendered through a uniform view transform — never stretch */
   display: block; z-index: 2; cursor: crosshair;
   transform-origin: top left;
-  /* smooth shrink/restore when chat opens/closes */
   transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
 }
 #blink-canvas {
   position: fixed; top: 0; left: 0;
-  /* kept in lockstep with drawing canvas by JS */
   display: block; z-index: 3; pointer-events: none;
   transform-origin: top left;
   transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Chat-open mini-canvas placement is computed by JS (layoutMiniCanvas):
-   landscape → centered in left 50% | portrait → centered in top 35%.
-   The old hard-coded vw/vh transforms broke once the canvas could be
-   letterboxed/centered after a window resize. */
-
-
-/* ── Eye hint SVG — invisible but in layout so getScreenCTM() works ── */
+/* ── Eye hint SVG — hidden but in layout for getScreenCTM() ── */
 #hint-eyes {
   position: fixed; top: 50%; left: 50%;
   transform: translate(-50%, -50%);
@@ -43,15 +30,32 @@ body { height: 100lvh; }
   visibility: hidden; pointer-events: none;
 }
 
+#draw-hint {
+  position: fixed;
+  left: 50%;
+  top: calc(50% - 10.5vw);
+  transform: translate(-50%, -100%);
+  z-index: 5;
+  margin: 0;
+  padding: 0 1rem;
+  max-width: 90vw;
+  text-align: center;
+  font-size: clamp(1rem, 3vw, 1.35rem);
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.3);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.4s;
+}
+
 /* ── Landing middle layer: emoji marquee ── */
 #emoji-marquee {
-  /* bleeds past top/bottom (JS sets the vars) — shifted DOWN so the top
-     row shows only the lower ~8% of the faces, bottom row lightly cut */
   position: fixed; left: 0; right: 0; z-index: 1;
   top: calc(-1 * var(--bleed-top, 90px));
   bottom: calc(-1 * var(--bleed-bottom, 10px));
   overflow: hidden; pointer-events: none;
-  opacity: 0.2;                            /* black strokes @ 20% */
+  opacity: 0.2;
   display: flex; flex-direction: column; justify-content: space-between;
   transition: opacity 0.7s;
 }
@@ -61,7 +65,6 @@ body { height: 100lvh; }
 }
 .emoji-strip { display: flex; align-items: center; }
 .emoji-strip svg { flex-shrink: 0; }
-/* two identical halves + (-50% → 0) = seamless left→right loop */
 @keyframes emoji-scroll {
   from { transform: translateX(-50%); }
   to   { transform: translateX(0); }
@@ -69,8 +72,7 @@ body { height: 100lvh; }
 
 /* ── Phase 1: landing card + color hint ── */
 #color-hint {
-  /* flex centering, NOT transform — a transformed ancestor breaks
-     backdrop-filter sampling in iOS Safari (card loses its frost) */
+  /* No transform here — breaks backdrop-filter on iOS Safari */
   position: fixed; inset: 0;
   display: flex; align-items: center; justify-content: center;
   z-index: 10; pointer-events: none;
@@ -80,27 +82,21 @@ body { height: 100lvh; }
   transition: opacity 0.4s;
 }
 
-/* Liquid Glass card — standard recipe: heavy blur + saturation boost,
-   translucent fill, bright specular inset top edge, soft depth shadow */
+/* Liquid Glass card */
 #landing-card {
-  position: relative; z-index: 1;   /* above the peek emoji */
+  position: relative; z-index: 1;
   padding: 26px 30px 22px;
   border-radius: 32px;
-  width: min(92vw, 560px);          /* wide → tagline stays ~2 lines */
+  width: min(92vw, 560px);
   background: rgba(255, 255, 255, 0.14);
-  /* gentle frost: strong blur dissolves the thin 20%-opacity emoji
-     strokes entirely — 4px keeps them visible as soft shapes (霧化),
-     matching the Chrome refraction look */
   backdrop-filter: blur(4px) saturate(170%);
   -webkit-backdrop-filter: blur(4px) saturate(170%);
   border: 1px solid rgba(255, 255, 255, 0.38);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.50),   /* specular highlight */
+    inset 0 1px 0 rgba(255, 255, 255, 0.50),
     inset 0 -1px 0 rgba(255, 255, 255, 0.10),
     0 12px 40px rgba(0, 0, 0, 0.22);
 }
-/* Chromium only (set by JS): true liquid refraction via SVG displacement
-   map — pattern from github.com/archisvaze/liquid-glass & kube.io */
 #landing-card.lg-refract {
   backdrop-filter: url(#lg-refract) blur(3px) saturate(180%);
   -webkit-backdrop-filter: url(#lg-refract) blur(3px) saturate(180%);
@@ -198,20 +194,16 @@ body { height: 100lvh; }
   transition: opacity 0.3s, transform 0.2s;
 }
 #complete-btn:hover { transform: translateX(-50%) scale(1.03); }
-/* Portrait: toolbar is a bottom-center row — lift the button above it */
 @media (orientation: portrait) {
   #complete-btn { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
 }
 
-/* ── Chat dialog
-   Landscape : slides in from right (right 50%)
-   Portrait  : slides up from bottom (bottom 65%)            ── */
+/* ── Chat dialog ── */
 #chat-dialog {
   position: fixed; z-index: 30;
   display: flex; flex-direction: column;
-  background: transparent; /* body gradient shows through */
+  background: transparent;
   pointer-events: none;
-  /* Landscape: right half */
   top: 0; right: 0; bottom: 0;
   width: 50%;
   transform: translateX(105%);
@@ -246,19 +238,14 @@ body { height: 100lvh; }
 /* Messages scroll area */
 #chat-messages {
   flex: 1; overflow-y: auto;
-  padding: 56px 16px 12px; /* top pad clears close btn */
+  padding: 56px 16px 12px;
   display: flex; flex-direction: column; gap: 10px;
-  /* 漸層消失: bubbles fade out as they scroll past the top of the dialog
-     instead of being sharply clipped */
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 90px);
   mask-image: linear-gradient(to bottom, transparent 0, black 90px);
 }
-/* hide scrollbar but keep scroll */
 #chat-messages::-webkit-scrollbar { display: none; }
 #chat-messages { -ms-overflow-style: none; scrollbar-width: none; }
-/* CRITICAL: children of a flex column shrink when content overflows —
-   without this the song card gets squashed to a thin strip on mobile */
-#chat-messages > * { flex-shrink: 0; }
+#chat-messages > * { flex-shrink: 0; } /* prevent song card squashing in flex column */
 
 /* Message bubbles — glass, inherit color from bg */
 .msg {
@@ -285,7 +272,7 @@ body { height: 100lvh; }
   flex: 1; padding: 11px 16px;
   border: 1.5px solid var(--pen-color-faint, rgba(255,255,255,0.3));
   border-radius: 24px; outline: none;
-  font-size: 16px; /* ≥16px prevents iOS Safari auto-zoom on input focus */
+  font-size: 16px; /* prevents iOS auto-zoom on focus */
   background: var(--bubble-bg, rgba(255,255,255,0.12));
   color: var(--pen-color, #fff);
   transition: border-color 0.2s;
@@ -294,8 +281,8 @@ body { height: 100lvh; }
 #chat-input:focus {
   border-color: var(--pen-color-faint, rgba(255,255,255,0.5));
 }
-/* City reveal button — map pin icon, left of input */
-#city-btn {
+/* Song reveal button — music note icon, left of input */
+#song-btn {
   width: 40px; height: 40px; border-radius: 50%; border: none; flex-shrink: 0;
   background: var(--bubble-bg, rgba(255,255,255,0.14));
   color: var(--pen-color, #fff);
@@ -304,9 +291,9 @@ body { height: 100lvh; }
   transition: background 0.15s, opacity 0.2s;
   opacity: 0.55;
 }
-#city-btn:hover   { background: var(--bubble-bg-strong, rgba(255,255,255,0.25)); opacity: 1; }
-#city-btn.ready   { opacity: 1; }
-#city-btn:disabled { opacity: 0.2; cursor: default; }
+#song-btn:hover   { background: var(--bubble-bg-strong, rgba(255,255,255,0.25)); opacity: 1; }
+#song-btn.ready   { opacity: 1; }
+#song-btn:disabled { opacity: 0.2; cursor: default; }
 
 #send-btn {
   width: 44px; height: 44px; border-radius: 50%; border: none;
@@ -323,9 +310,8 @@ body { height: 100lvh; }
   max-width: 88%;
   padding: 0;
   border-radius: 18px;
-  /* clip children (image) to rounded corners */
   overflow: hidden;
-  -webkit-mask-image: -webkit-radial-gradient(white, black); /* Safari clip fix */
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
   background: rgba(255,255,255,0.15);
   backdrop-filter: blur(14px);
   border: 1px solid rgba(255,255,255,0.20);
@@ -336,11 +322,9 @@ body { height: 100lvh; }
   from { opacity: 0; transform: translateY(16px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0)    scale(1);    }
 }
-/* Image wrapper constrains and clips the photo */
 .city-card-img-wrap {
   width: 100%; height: 150px;
   overflow: hidden;
-  /* no border-radius here — parent handles it */
   display: block;
 }
 .city-card-img {
@@ -443,5 +427,4 @@ body { height: 100lvh; }
   .star                  { font-size: 1.6rem; }
 }
 
-/* ── Legacy full-screen overlay — disabled ── */
 #city-reveal { display: none !important; }

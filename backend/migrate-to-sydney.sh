@@ -19,15 +19,18 @@ aws ecr describe-repositories --repository-names $REPO --region $REGION >/dev/nu
        --query 'repository.repositoryUri' --output text
 
 echo "── 2/3 Build image (amd64 — M-series Macs build ARM by default)"
-docker build --platform linux/amd64 -t $REPO .
+TAG="$(git -C "$(dirname "$0")/.." rev-parse --short HEAD 2>/dev/null || echo latest)"
+docker build --platform linux/amd64 -t $REPO:$TAG .
 
 echo "── 3/3 Push to $ECR"
 aws ecr get-login-password --region $REGION | \
   docker login --username AWS --password-stdin $ECR
-docker tag $REPO:latest $ECR/$REPO:latest
+docker tag $REPO:$TAG $ECR/$REPO:$TAG
+docker tag $REPO:$TAG $ECR/$REPO:latest
+docker push $ECR/$REPO:$TAG
 docker push $ECR/$REPO:latest
 
 echo ""
-echo "✅ Image pushed: $ECR/$REPO:latest"
+echo "✅ Image pushed: $ECR/$REPO:$TAG (also tagged latest)"
 echo "Next: create the ECS Express service in the $REGION console"
 echo "      (steps in chat), then tell Claude the new service URL."

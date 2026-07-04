@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GenAI_DrawToPlay 審計報告</title>
+<style>
+  :root {
+    --sidebar-bg: #1a1f2e;
+    --sidebar-hover: #242a3d;
+    --sidebar-active: #2d3555;
+    --bg: #f0f3f7;
+    --card-bg: #ffffff;
+    --border: #e6eaef;
+    --text: #1e2233;
+    --text-secondary: #6b7394;
+    --accent: #3370ff;
+    --accent-light: #e8f0ff;
+    --success: #34c759;
+    --warning: #ff9500;
+    --danger: #ff3b30;
+    --info: #5ac8fa;
+    --badge-critical: #ff3b30;
+    --badge-high: #ff9500;
+    --badge-medium: #3370ff;
+    --badge-low: #8e8e93;
+    --badge-info: #5ac8fa;
+    --bar-bg: #e8eaed;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.8;
+    display: flex;
+    min-height: 100vh;
+    font-size: 15px;
+  }
+  .sidebar { width: 240px; background: var(--sidebar-bg); color: #fff; flex-shrink: 0; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .sidebar-header { padding: 20px 20px 16px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .sidebar-header h1 { font-size: 18px; font-weight: 700; letter-spacing: .5px; }
+  .sidebar-header .sub { font-size: 12px; color: rgba(255,255,255,.4); margin-top: 4px; }
+  .sidebar-nav { padding: 8px 0; flex: 1; }
+  .sidebar-nav a { display: flex; align-items: center; gap: 12px; padding: 14px 20px; color: rgba(255,255,255,.6); text-decoration: none; font-size: 14px; transition: all .15s; border-left: 3px solid transparent; }
+  .sidebar-nav a:hover { background: var(--sidebar-hover); color: #fff; }
+  .sidebar-nav a.active { background: var(--sidebar-active); color: #fff; border-left-color: var(--accent); }
+  .sidebar-nav a .icon { width: 18px; text-align: center; font-size: 14px; }
+  .sidebar-footer { padding: 12px 20px; border-top: 1px solid rgba(255,255,255,.06); font-size: 11px; color: rgba(255,255,255,.3); }
+  .main { flex: 1; min-width: 0; padding: 32px 40px 80px; }
+  .page-header { margin-bottom: 32px; }
+  .page-header h2 { font-size: 26px; font-weight: 700; }
+  .page-header .meta { font-size: 14px; color: var(--text-secondary); margin-top: 6px; display: flex; gap: 20px; flex-wrap: wrap; }
+  .page-header .meta span { display: flex; align-items: center; gap: 4px; }
+  .card { background: var(--card-bg); border-radius: 10px; border: 1px solid var(--border); margin-bottom: 20px; overflow: hidden; }
+  .card-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 15px; }
+  .card-body { padding: 24px; }
+  .score-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .score-item { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; background: #f8fafc; border-radius: 8px; border: 1px solid var(--border); }
+  .score-item .label { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .4px; }
+  .score-item .bar-row { display: flex; align-items: center; gap: 12px; }
+  .score-item .bar-track { flex: 1; height: 10px; background: var(--bar-bg); border-radius: 5px; overflow: hidden; }
+  .score-item .bar-fill { height: 100%; border-radius: 5px; transition: width .6s ease; }
+  .score-item .value { font-size: 22px; font-weight: 700; min-width: 52px; text-align: right; }
+  .score-item .grade { font-size: 15px; font-weight: 700; min-width: 22px; text-align: center; }
+  .bar-fill.s { background: linear-gradient(90deg, #34c759, #30d158); }
+  .bar-fill.a { background: linear-gradient(90deg, #3370ff, #5e8cff); }
+  .bar-fill.b { background: linear-gradient(90deg, #ff9500, #ffb340); }
+  .bar-fill.c { background: linear-gradient(90deg, #ff3b30, #ff6b61); }
+  .bar-fill.d { background: linear-gradient(90deg, #ff6b61, #ff9f91); }
+  .bar-fill.f { background: linear-gradient(90deg, #9b1d1a, #d63031); }
+  .grade-s { color: #34c759; } .grade-a { color: #3370ff; }
+  .grade-b { color: #ff9500; } .grade-c { color: #ff3b30; }
+  .grade-d { color: #ff6b61; } .grade-f { color: #9b1d1a; }
+  .overall-row { grid-column: 1 / -1; background: linear-gradient(135deg, #1a1f2e, #2d3555); border-color: transparent; }
+  .overall-row .label { color: rgba(255,255,255,.6); }
+  .overall-row .value { color: #fff; }
+  .overall-row .grade { color: #34c759; }
+  .overall-row .bar-fill { background: linear-gradient(90deg, #34c759, #30d158); }
+  .stats-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .stat-card { flex: 1; min-width: 140px; padding: 20px 24px; background: var(--card-bg); border-radius: 10px; border: 1px solid var(--border); text-align: center; }
+  .stat-card .num { font-size: 32px; font-weight: 700; line-height: 1.3; }
+  .stat-card .desc { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+  .finding { border-left: 4px solid var(--border); margin-bottom: 20px; padding: 20px 24px; border-radius: 0 10px 10px 0; background: #fafbfc; border: 1px solid var(--border); border-left-width: 4px; }
+  .finding.severity-critical { border-left-color: var(--badge-critical); }
+  .finding.severity-high { border-left-color: var(--badge-high); }
+  .finding.severity-medium { border-left-color: var(--badge-medium); }
+  .finding.severity-low { border-left-color: var(--badge-low); }
+  .finding.severity-info { border-left-color: var(--badge-info); }
+  .finding-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .finding-header h4 { font-size: 16px; font-weight: 600; flex: 1; }
+  .badge { display: inline-block; padding: 3px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; line-height: 1.6; }
+  .badge-critical { background: #ffeae9; color: var(--badge-critical); }
+  .badge-high { background: #fff3e0; color: var(--badge-high); }
+  .badge-medium { background: var(--accent-light); color: var(--badge-medium); }
+  .badge-low { background: #f2f2f5; color: var(--badge-low); }
+  .badge-info { background: #e4f5ff; color: #007aff; }
+  .badge-confirmed { background: #e8ffe8; color: #248a3d; }
+  .badge-suspected { background: #fff8e1; color: #b8860b; }
+  .badge-s { background: #e8ffe8; color: #248a3d; }
+  .badge-a { background: var(--accent-light); color: var(--accent); }
+  .badge-b { background: #fff3e0; color: var(--warning); }
+  .badge-c { background: #ffeae9; color: var(--danger); }
+  .finding-meta { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+  .finding-meta span { display: flex; align-items: center; gap: 4px; }
+  .finding .evidence { margin: 12px 0; padding: 14px 18px; background: #f0f2f5; border-radius: 8px; font-family: "SF Mono","Fira Code","Consolas",monospace; font-size: 13px; line-height: 1.8; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  .finding .problem { font-size: 14px; margin: 12px 0; color: var(--text); line-height: 1.8; }
+  .finding .fix-box { margin-top: 12px; padding: 14px 18px; background: #f0f7ff; border-radius: 8px; border: 1px solid #d6e4ff; font-size: 13px; }
+  .finding .fix-box code { display: block; margin-top: 6px; padding: 12px 16px; background: #1e2233; color: #cdd6f4; border-radius: 6px; font-family: "SF Mono","Fira Code","Consolas",monospace; font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-all; }
+  .fix-label { font-weight: 600; font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: .3px; }
+  .section-title { font-size: 20px; font-weight: 700; margin: 36px 0 20px; padding-bottom: 10px; border-bottom: 2px solid var(--border); display: flex; align-items: center; gap: 8px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; padding: 12px 16px; font-weight: 600; color: var(--text-secondary); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; border-bottom: 2px solid var(--border); background: #f8fafc; }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  .check-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px; }
+  .check-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 14px; line-height: 1.6; }
+  .check-item .check { color: var(--success); font-weight: 700; }
+  .check-item .cross { color: var(--danger); font-weight: 700; }
+  .win-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .win-card { padding: 16px; background: linear-gradient(135deg, #f0f7ff, #e8f0ff); border-radius: 8px; border: 1px solid #d6e4ff; }
+  .win-card .win-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+  .win-card .win-meta { font-size: 11px; color: var(--text-secondary); }
+  .small { font-size: 13px; color: var(--text-secondary); }
+  .code-block { margin: 8px 0; padding: 14px 18px; background: #1e2233; color: #cdd6f4; border-radius: 6px; font-family: "SF Mono","Fira Code","Consolas",monospace; font-size: 13px; overflow-x: auto; white-space: pre; line-height: 1.7; }
+  .hl { color: #f7768e; font-weight: 600; } .cm { color: #565f89; }
+  .kw { color: #bb9af7; } .fn { color: #7aa2f7; }
+  .ty { color: #ff9e64; } .op { color: #89ddff; }
+  .str { color: #9ece6a; } .nu { color: #ff9e64; }
+  @media (max-width: 768px) { .sidebar { display: none; } .main { padding: 16px; } .score-grid { grid-template-columns: 1fr; } .stats-row { flex-direction: column; } .check-list { grid-template-columns: 1fr; } .win-grid { grid-template-columns: 1fr; } }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c1c7d0; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #a8adb8; }
+</style>
+</head>
+<body>
+<nav class="sidebar"><div class="sidebar-header"><h1>GenAI_DrawToPlay</h1><div class="sub">full · 2026-07-04</div></div><div class="sidebar-nav"><a href="#summary"><span class="icon">📊</span> 總覽</a>
+<a href="#executive-summary"><span class="icon">📝</span> 總體評估</a>
+<a href="#project-map"><span class="icon">🗺️</span> 專案地圖</a>
+<a href="#coverage"><span class="icon">🧭</span> 覆蓋矩陣</a>
+<a href="#findings"><span class="icon">🔍</span> 詳細發現</a>
+<a href="#architecture"><span class="icon">🏗</span> 架構與模組邊界</a>
+<a href="#security"><span class="icon">🔒</span> 安全</a>
+<a href="#stability"><span class="icon">⚡</span> 穩定性與錯誤處理</a>
+<a href="#performance"><span class="icon">🚀</span> 效能與擴展性</a>
+<a href="#testing"><span class="icon">🧪</span> 測試品質</a>
+<a href="#maintainability"><span class="icon">📐</span> 可維護性</a>
+<a href="#design"><span class="icon">📋</span> 設計原則</a>
+<a href="#release"><span class="icon">🚢</span> 發布與部署</a>
+<a href="#documentation"><span class="icon">📚</span> 文件準確性</a>
+<a href="#configuration"><span class="icon">⚙️</span> 設定安全</a>
+<a href="#observability"><span class="icon">🩺</span> 可觀測性</a>
+<a href="#data-integrity"><span class="icon">🧱</span> 資料完整性</a>
+<a href="#privacy"><span class="icon">🛡</span> 隱私與資料治理</a>
+<a href="#accessibility"><span class="icon">⌨️</span> Accessibility / UX 正確性</a>
+<a href="#supply-chain"><span class="icon">🔗</span> 供應鏈與可重現性</a>
+<a href="#cost"><span class="icon">💸</span> 成本與資源經濟</a>
+<a href="#ai-safety"><span class="icon">🤖</span> AI / LLM 安全</a>
+<a href="#fallback"><span class="icon">🧯</span> Fallback / 防禦式程式碼</a>
+<a href="#testing-authenticity"><span class="icon">🧪</span> Testing Authenticity</a>
+<a href="#type-safety"><span class="icon">🧩</span> Type Safety</a>
+<a href="#frontend-state"><span class="icon">🧠</span> Frontend State</a>
+<a href="#backend-api"><span class="icon">🔌</span> Backend API</a>
+<a href="#dependency-weight"><span class="icon">⚖️</span> Dependency Weight</a>
+<a href="#code-consistency"><span class="icon">🧭</span> Code Consistency</a>
+<a href="#comment-coverage"><span class="icon">💬</span> Comment Coverage</a>
+<a href="#principles"><span class="icon">📋</span> 設計原則</a>
+<a href="#fix-order"><span class="icon">🎯</span> 修復順序</a></div><div class="sidebar-footer">Fuck My Shit Mountain v1.0</div></nav>
+<div class="main">
+<div class="page-header" id="summary"><h2>GenAI_DrawToPlay 全量審計報告</h2><div class="meta"><span>📅 2026-07-04</span><span>🔍 Mode: full</span><span>🛠 Reviewer: Codex + fuck-my-shit-mountain</span></div></div>
+<div class="card"><div class="card-header">📊 評分面板</div><div class="card-body"><div class="score-grid"><div class="score-item"><div class="label">Security</div><div class="bar-row"><div class="bar-track"><div class="bar-fill b" style="width:58%"></div></div><span class="value grade-b">5.8</span><span class="grade grade-b">B</span></div><div class="small">匿名公開端點已有基本 rate limit，但 X-Forwarded-For 可被直接信任且 LLM/Spotify 成本路徑仍缺少 signed session 或 bot challenge。</div></div>
+<div class="score-item"><div class="label">Stability</div><div class="bar-row"><div class="bar-track"><div class="bar-fill b" style="width:51%"></div></div><span class="value grade-b">5.1</span><span class="grade grade-b">B</span></div><div class="small">目前有一個前端執行期阻斷缺陷，加上 async handler 內同步 I/O 與 process-local 狀態，使可靠性只能算中等偏弱。</div></div>
+<div class="score-item"><div class="label">Performance</div><div class="bar-row"><div class="bar-track"><div class="bar-fill b" style="width:56%"></div></div><span class="value grade-b">5.6</span><span class="grade grade-b">B</span></div><div class="small">Spotify 與 LLM 呼叫都有 timeout 或 bounded candidates，但同步阻塞與每次推薦多次模型呼叫會限制併發與成本效率。</div></div>
+<div class="score-item"><div class="label">Testing</div><div class="bar-row"><div class="bar-track"><div class="bar-fill d" style="width:28%"></div></div><span class="value grade-d">2.8</span><span class="grade grade-d">D</span></div><div class="small">只有語法檢查可跑，沒有自動化測試、CI 或關鍵使用者流程測試，無法支撐穩定 public release。</div></div>
+<div class="score-item"><div class="label">Maintainability</div><div class="bar-row"><div class="bar-track"><div class="bar-fill b" style="width:54%"></div></div><span class="value grade-b">5.4</span><span class="grade grade-b">B</span></div><div class="small">小型 repo 容易理解，但 frontend/app.js 1333 行混合 UI、狀態、繪圖、網路與持久化，已違反 SRP 與檔案大小紀律。</div></div>
+<div class="score-item"><div class="label">Design</div><div class="bar-row"><div class="bar-track"><div class="bar-fill b" style="width:50%"></div></div><span class="value grade-b">5.0</span><span class="grade grade-b">B</span></div><div class="small">核心流程可追蹤，但多個全域 mutable state、hardcoded deployment value、以及框架 handler 直接做業務與 I/O 讓邊界偏弱。</div></div>
+<div class="score-item"><div class="label">Release</div><div class="bar-row"><div class="bar-track"><div class="bar-fill c" style="width:46%"></div></div><span class="value grade-c">4.6</span><span class="grade grade-c">C</span></div><div class="small">Docker/App Runner 設定存在，但缺少 CI、migration、rollback、production env 文件與健康檢查，且目前 frontend API 變數會阻斷上線流程。</div></div>
+<div class="score-item overall-row"><div class="label">Overall</div><div class="bar-row"><div class="bar-track" style="background:rgba(255,255,255,.12)"><div class="bar-fill" style="width:49%;background:linear-gradient(90deg,#ff9500,#ffb340)"></div></div><span class="value" style="color:#fff">4.9</span><span class="grade" style="color:#ff9500">C</span></div><div class="small" style="color:rgba(255,255,255,.72)">整體為 B：架構小而可理解，但 release 前必須補上阻斷性 frontend config、測試/CI、濫用防護與部署可重現性。</div></div></div></div></div>
+<h3 class="section-title" id="executive-summary">📝 總體評估</h3>
+<div class="card"><div class="card-header">📋 Executive Summary</div><div class="card-body">
+<p><strong>專案概況：</strong>GenAI_DrawToPlay 是一個小型 AI 繪圖到 Spotify 推薦 app：前端是單頁 vanilla JS/canvas UI，後端是 FastAPI + LangChain/OpenAI + Spotify + PostgreSQL，部署線索包含 Dockerfile、AWS App Runner yaml 與 ECR push script。</p>
+<p style="margin-top:12px"><strong>主要風險：</strong>目前最大的 release blocker 是 frontend/app.js 使用未宣告的 <code>API_BASE</code>，核心 chat/song/session API flow 會在瀏覽器執行期失敗。第二層風險是匿名公開端點仍能觸發 LLM/Spotify 成本路徑，且 rate limiter 直接信任 <code>X-Forwarded-For</code>。</p>
+<p style="margin-top:12px"><strong>亮點：</strong>repo 小、邊界大致可讀，SQL 使用 parameterized query，Spotify HTTP call 有 timeout，最近已加入 CORS env、payload 長度限制、session TTL、DOM 安全渲染與 DB context manager 等改善。</p>
+<p style="margin-top:12px"><strong>優先修復：</strong>先修 API_BASE 與 production ALLOWED_ORIGINS，再補 signed session/bot challenge、blocking I/O 處理、critical path tests/CI、DB migrations 與 privacy/accessibility 基線。</p>
+<p style="margin-top:12px"><strong>總評：</strong>整體 4.9 / B。這不是不可救的系統，但目前還不適合穩定 public release；修復重點很集中，先補 release blocker 與測試後健康度會快速上升。</p>
+</div></div>
+<h3 class="section-title" id="project-map">🗺️ Project Map</h3>
+<div class="card"><div class="card-body">
+<p><strong>主要元件：</strong>frontend/index.html/style.css/app.js 提供 canvas 繪圖、chat dialog、Spotify card 與 rating；backend/main.py 提供 FastAPI endpoints；backend/agent.py 管理 prompt、session memory 與 LLM JSON 產生；backend/tools.py 封裝 Spotify；backend/database.py 寫入 PostgreSQL sessions。</p>
+<p style="margin-top:12px"><strong>資料流：</strong>使用者選色與畫圖 → app.js capture canvas + telemetry → /chat 呼叫 GPT-4o cold read → 使用者回覆 → /song-result 透過 LLM 產生 search query，再查 Spotify → 前端顯示 card → /session-complete 儲存 strokes、telemetry、conversation、推薦結果 → /rate 與 /spotify-opened 補寫互動資料。</p>
+<p style="margin-top:12px"><strong>狀態所有權：</strong>前端 app.js 持有 workflow state、strokes、telemetry、dbSessionId；後端 agent.py 持有 in-memory conversation；main.py 持有 rate-limit buckets 與 frontend session 到 db id 的 process-local mapping；PostgreSQL 是 session analytics 的長期儲存。</p>
+<p style="margin-top:12px"><strong>外部介面：</strong>OpenAI/ChatOpenAI、Spotify Accounts/Search/Artists API、ip-api geolocation、PostgreSQL、AWS App Runner/ECR、Google Fonts。</p>
+</div></div>
+<h3 class="section-title" id="coverage">🧭 覆蓋矩陣</h3>
+<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>維度</th><th style="width:120px">Coverage</th><th>檢查證據</th><th>排除 / 限制</th></tr></thead><tbody><tr><td>架構與模組邊界</td><td><span class="badge badge-suspected">Medium</span></td><td>backend/main.py, agent.py, tools.py, database.py, frontend/app.js；request/data/state flow；全域 state 搜尋。</td><td>未做動態 dependency graph；未讀 psy_resource PDF。</td></tr><tr><td>安全</td><td><span class="badge badge-confirmed">High</span></td><td>所有 FastAPI endpoint、CORS、rate limiter、env/secrets 搜尋、frontend rendering、.gitignore 與 tracked secret check。</td><td>未跑 gitleaks/semgrep；未掃描 production cloud 設定。</td></tr><tr><td>穩定性與錯誤處理</td><td><span class="badge badge-confirmed">High</span></td><td>py_compile、node --check、endpoint flow、external call timeout、catch/except 搜尋。</td><td>因缺 fastapi package，無法 import/run backend。</td></tr><tr><td>效能與擴展性</td><td><span class="badge badge-suspected">Medium</span></td><td>LLM/Spotify 呼叫次數、sync I/O、frontend single-file flow、in-memory collections、rate limiter。</td><td>未做 load test 或 browser performance trace。</td></tr><tr><td>測試品質</td><td><span class="badge badge-confirmed">High</span></td><td>test file 搜尋、py_compile、node --check、CI/tool availability。</td><td>未安裝 dependencies，無法跑 backend import/runtime tests。</td></tr><tr><td>可維護性</td><td><span class="badge badge-confirmed">High</span></td><td>wc -l、module responsibility、duplication/pattern 搜尋、frontend state review。</td><td>未做 automated complexity metric。</td></tr><tr><td>設計原則</td><td><span class="badge badge-confirmed">High</span></td><td>principles rubric: SRP、blocking async、global mutable state、config hardcoding、fail-fast。</td><td>未做完整 mutation/complexity tooling。</td></tr><tr><td>發布與部署</td><td><span class="badge badge-confirmed">High</span></td><td>Dockerfile、apprunner.yaml、migration script、requirements、frontend API config、git status。</td><td>未存取 AWS console 或 production env。</td></tr><tr><td>文件準確性</td><td><span class="badge badge-suspected">Medium</span></td><td>README/docs inventory、.gitignore、本機 script comments。</td><td>project-details.md 被 gitignore 且未讀；可能有本機私有說明未納入審計。</td></tr><tr><td>設定安全</td><td><span class="badge badge-confirmed">High</span></td><td>env var usage、hardcoded URL、CORS defaults、Docker/App Runner config、requirements。</td><td>未檢查實際 production env values。</td></tr><tr><td>可觀測性</td><td><span class="badge badge-suspected">Medium</span></td><td>print/log 搜尋、health endpoint、error paths、deployment config。</td><td>未檢查 cloud logging/metrics/alerts。</td></tr><tr><td>資料完整性</td><td><span class="badge badge-confirmed">High</span></td><td>database.py SQL、session complete flow、rating/open tracking、migration 搜尋。</td><td>未連線 DB 檢查 schema/index/constraints。</td></tr><tr><td>隱私與資料治理</td><td><span class="badge badge-confirmed">High</span></td><td>telemetry payload、conversation persistence、IP geolocation、logs、ignored analysis data。</td><td>未檢查真實 DB data 或 privacy policy 網站頁面。</td></tr><tr><td>Accessibility / UX 正確性</td><td><span class="badge badge-suspected">Medium</span></td><td>index.html controls、canvas workflow、button labels、dialog semantics、CSS responsive rules。</td><td>未用真實 browser/axe 驗證；結論以 DOM/source inspection 為主。</td></tr><tr><td>供應鏈與可重現性</td><td><span class="badge badge-suspected">Medium</span></td><td>requirements pins、Dockerfile base image、ECR push script、tool availability。</td><td>未跑 pip-audit/trivy/syft，無網路 CVE 查詢。</td></tr><tr><td>成本與資源經濟</td><td><span class="badge badge-suspected">Medium</span></td><td>LLM call sites、Spotify call counts、rate limiter、image payload bounds。</td><td>未讀 production billing/quota/alerts。</td></tr><tr><td>AI / LLM 安全</td><td><span class="badge badge-confirmed">High</span></td><td>SYSTEM_PROMPT、JSON parsing、model result flow、tool/action boundary、cost path。</td><td>未跑 prompt injection eval 或 red-team corpus。</td></tr><tr><td>Fallback / 防禦式程式碼</td><td><span class="badge badge-confirmed">High</span></td><td>catch/except、fallback regex、JSON parsing fallback、silent errors。</td><td>未做 chaos/runtime fault injection。</td></tr><tr><td>Testing Authenticity</td><td><span class="badge badge-suspected">Medium</span></td><td>test inventory、test_keys.py review、runtime check results。</td><td>沒有正式 test suite 可深入判斷 mock quality。</td></tr><tr><td>Type Safety</td><td><span class="badge badge-suspected">Medium</span></td><td>Pydantic models、Optional fields、dict/list boundaries、JS runtime globals、LLM JSON parsing。</td><td>Python/JS 無靜態 typechecker；未跑 mypy/tsc。</td></tr><tr><td>Frontend State</td><td><span class="badge badge-confirmed">High</span></td><td>frontend/app.js state vars、workflow transitions、fetch/rendering、resize/keyboard handling。</td><td>未用 browser 重現所有 responsive states。</td></tr><tr><td>Backend API</td><td><span class="badge badge-confirmed">High</span></td><td>all FastAPI endpoints、request/response shapes、validation、status/error handling。</td><td>未跑 live HTTP contract tests。</td></tr><tr><td>Dependency Weight</td><td><span class="badge badge-suspected">Medium</span></td><td>requirements.txt、frontend no package manifest、Docker image base。</td><td>未做 dependency size analysis。</td></tr><tr><td>Code Consistency</td><td><span class="badge badge-suspected">Medium</span></td><td>naming、endpoint patterns、error return patterns、frontend/backend naming drift。</td><td>未跑 formatter/linter。</td></tr><tr><td>Comment Coverage</td><td><span class="badge badge-suspected">Medium</span></td><td>public functions/comments、README absence、stale city naming、section comments。</td><td>未讀 ignored project-details.md。</td></tr></tbody></table></div></div></div>
+<div class="stats-row"><div class="stat-card"><div class="num">11</div><div class="desc">總發現</div></div><div class="stat-card"><div class="num" style="color:var(--badge-critical)">1</div><div class="desc">Critical</div></div><div class="stat-card"><div class="num" style="color:var(--badge-high)">3</div><div class="desc">High</div></div><div class="stat-card"><div class="num" style="color:var(--badge-medium)">6</div><div class="desc">Medium</div></div><div class="stat-card"><div class="num" style="color:var(--badge-low)">1</div><div class="desc">Low</div></div></div>
+<h3 class="section-title" id="top-risks">⚠️ Top Risks</h3>
+<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th style="width:60px">#</th><th>Finding</th><th style="width:100px">Severity</th><th style="width:160px">Category</th></tr></thead><tbody><tr><td>1</td><td>前端使用未定義的 API_BASE，所有後端互動在執行期失敗</td><td><span class="badge badge-critical">Critical</span></td><td>Stability / Release</td></tr><tr><td>2</td><td>匿名 LLM/Spotify 成本路徑仍可被繞過 rate limit 濫用</td><td><span class="badge badge-high">High</span></td><td>Security / Cost / AI-Safety</td></tr><tr><td>3</td><td>FastAPI async handlers 內執行同步 LLM、HTTP 與 DB I/O，會阻塞 event loop</td><td><span class="badge badge-high">High</span></td><td>Stability / Performance</td></tr><tr><td>4</td><td>關鍵行為缺少自動化測試與 CI，release confidence 很低</td><td><span class="badge badge-high">High</span></td><td>Testing / Release</td></tr><tr><td>5</td><td>process-local session 與 db id 對應在重啟或多 instance 時失效</td><td><span class="badge badge-medium">Medium</span></td><td>Stability / Data-Integrity</td></tr><tr><td>6</td><td>資料庫 schema 與 migration 不在 repo，部署與資料一致性不可重現</td><td><span class="badge badge-medium">Medium</span></td><td>Data-Integrity / Release</td></tr><tr><td>7</td><td>模型 JSON fallback 會接受夾帶文字中的外層物件，輸出驗證過寬</td><td><span class="badge badge-medium">Medium</span></td><td>AI-Safety / Type-Safety</td></tr><tr><td>8</td><td>使用者心理/行為資料與 IP geolocation 缺少保留、刪除與同意邊界</td><td><span class="badge badge-medium">Medium</span></td><td>Privacy</td></tr><tr><td>9</td><td>核心 UI 對鍵盤與輔助科技不可完整操作</td><td><span class="badge badge-medium">Medium</span></td><td>Accessibility / Frontend-State</td></tr><tr><td>10</td><td>Docker/App Runner release 設定缺少 healthcheck、non-root runtime 與 artifact reproducibility</td><td><span class="badge badge-medium">Medium</span></td><td>Release / Supply-Chain</td></tr><tr><td>11</td><td>repo 缺少開發/部署文件，必要 env 與資料流程只能靠猜</td><td><span class="badge badge-low">Low</span></td><td>Documentation / Configuration</td></tr></tbody></table></div></div></div>
+<h3 class="section-title" id="findings">🔍 Detailed Findings</h3>
+<div class="finding severity-critical">
+  <div class="finding-header"><h4>1. 前端使用未定義的 API_BASE，所有後端互動在執行期失敗</h4><span class="badge badge-critical">Critical</span><span class="badge badge-confirmed">Confirmed</span></div>
+  <div class="finding-meta"><span>📁 Stability / Release</span><span>📍 frontend/app.js:1-3, 955, 1000, 1077, 1114, 1139, 1161, 1201</span><span>🎯 fetch calls / API bootstrap</span></div>
+  <div class="problem"><strong>問題：</strong>目前頁面載入後不會立刻語法失敗，但使用者一旦完成繪圖、送 chat、揭露歌曲、儲存 session 或評分，瀏覽器會拋出 ReferenceError: API_BASE is not defined。這會讓核心產品流程完全無法呼叫後端。</div>
+  <div class="problem"><strong>為什麼重要：</strong>這是 public release 的阻斷缺陷：AI 對話、Spotify 推薦、session 儲存與 rating 都依賴這個變數。</div>
+  <div class="problem"><strong>真實失敗情境：</strong>使用者畫完圖按 Completed，openChat() 進入 try block 後執行 fetch(`${API_BASE}/chat`)，JS 在組字串時丟 ReferenceError，畫面只顯示錯誤訊息或卡住，沒有推薦結果。</div>
+  <div class="evidence">File: frontend/app.js:1-3, 955, 1000, 1077, 1114, 1139, 1161, 1201
+Function / Module: fetch calls / API bootstrap
+Relevant behavior: 檔案只宣告 DEPLOYED_API_BASE 與 SESSION_ID，後續所有 fetch 都使用未宣告的 API_BASE。</div>
+  <div class="fix-box"><div class="fix-label">最小修復 / 長期修復</div><code>Minimal fix: 定義 API_BASE，例如：const API_BASE = /^localhost$|^127\.0\.0\.1$/.test(location.hostname) ? &#x27;http://localhost:8080&#x27; : DEPLOYED_API_BASE;
+Better long-term fix: 將 API base 移到 build/deploy config，並在 CI 中加入 smoke test 檢查 window.API 或 fetch config 已定義。</code></div>
+  <div class="fix-box" style="margin-top:6px;background:#fff8e1;border-color:#ffe082"><strong>⏱ 預估：</strong> 15-30 分鐘 &nbsp;·&nbsp; <strong>回歸測試：</strong> 用 Playwright 載入 frontend/index.html，mock backend，完成繪圖並點 Completed，斷言 /chat request 被送出且 console 沒有 ReferenceError。</div>
+</div><div class="finding severity-high">
+  <div class="finding-header"><h4>2. 匿名 LLM/Spotify 成本路徑仍可被繞過 rate limit 濫用</h4><span class="badge badge-high">High</span><span class="badge badge-confirmed">Confirmed</span></div>
+  <div class="finding-meta"><span>📁 Security / Cost / AI-Safety</span><span>📍 backend/main.py:61-73, 119-140; backend/agent.py:410-411, 528-555</span><span>🎯 rate_limit, /chat, /song-result, score_song_candidates</span></div>
+  <div class="problem"><strong>問題：</strong>雖然已有 per-IP rate limit，但若服務直接接受外部請求或 proxy 未清洗 X-Forwarded-For，攻擊者可以變換 header 繞過限制，持續觸發 OpenAI 與 Spotify API。CORS 不能阻止 server-to-server 或 curl 類請求。</div>
+  <div class="problem"><strong>為什麼重要：</strong>這會造成帳單暴增、API quota 被耗盡，也會讓正常使用者拿不到推薦。</div>
+  <div class="problem"><strong>真實失敗情境：</strong>攻擊者寫腳本每次帶不同 X-Forwarded-For 呼叫 /chat 和 /song-result；每次請求都穿過 rate_limit bucket，進入 llm.invoke 與 Spotify search。</div>
+  <div class="evidence">File: backend/main.py:61-73, 119-140; backend/agent.py:410-411, 528-555
+Function / Module: rate_limit, /chat, /song-result, score_song_candidates
+Relevant behavior: 所有昂貴端點仍是匿名公開；rate limiter 以 request header x-forwarded-for 作為 key，且 /chat、/song-result 會觸發 LLM 呼叫。</div>
+  <div class="fix-box"><div class="fix-label">最小修復 / 長期修復</div><code>Minimal fix: 只在可信 proxy 後才讀 X-Forwarded-For；否則使用 request.client.host。對 /chat、/song-result、/playlist-result 加 server-issued signed session token 或 Turnstile 驗證。
+Better long-term fix: 在 API Gateway/WAF 或 Cloudflare 層加 global quota、bot challenge、per-session budget 與 OpenAI spend alert。</code></div>
+  <div class="fix-box" style="margin-top:6px;background:#fff8e1;border-color:#ffe082"><strong>⏱ 預估：</strong> 0.5-1 天 &nbsp;·&nbsp; <strong>回歸測試：</strong> 新增 integration test：同一 client IP 但偽造多個 X-Forwarded-For 時仍被同一 rate bucket 限制；缺少 signed session token 時 /chat 回 403。</div>
+</div><div class="finding severity-high">
+  <div class="finding-header"><h4>3. FastAPI async handlers 內執行同步 LLM、HTTP 與 DB I/O，會阻塞 event loop</h4><span class="badge badge-high">High</span><span class="badge badge-confirmed">Confirmed</span></div>
+  <div class="finding-meta"><span>📁 Stability / Performance</span><span>📍 backend/main.py:119-140, 208-266; backend/agent.py:410-411, 447-555; backend/tools.py:12-17, 34-38, 65-69, 98-102, 114-118; backend/database.py:9-16</span><span>🎯 FastAPI endpoints, agent, tools, database</span></div>
+  <div class="problem"><strong>問題：</strong>在 async web server 中，這些同步操作會佔住 event loop worker。當 OpenAI、Spotify、ip-api 或 DB 慢時，其他使用者請求也會排隊，造成 tail latency 或 timeout。</div>
+  <div class="problem"><strong>為什麼重要：</strong>這是 public app 的可靠性與 scalability 風險，流量稍高或外部 API 變慢時會放大成整體服務延遲。</div>
+  <div class="problem"><strong>真實失敗情境：</strong>Spotify token endpoint 延遲 10 秒時，一個 /song-result request 阻塞 event loop；同 worker 上的 /health 或 /chat 也被延遲。</div>
+  <div class="evidence">File: backend/main.py:119-140, 208-266; backend/agent.py:410-411, 447-555; backend/tools.py:12-17, 34-38, 65-69, 98-102, 114-118; backend/database.py:9-16
+Function / Module: FastAPI endpoints, agent, tools, database
+Relevant behavior: async def endpoint 直接呼叫同步 llm.invoke、requests.get/post 與 psycopg2.connect/query。</div>
+  <div class="fix-box"><div class="fix-label">最小修復 / 長期修復</div><code>Minimal fix: 把 endpoint 改成同步 def 讓 FastAPI 放到 threadpool，或用 anyio.to_thread.run_sync 包住 blocking sections。
+Better long-term fix: 改用 async OpenAI/client、httpx.AsyncClient、asyncpg/psycopg pool，並配置 connection pool、timeouts、bulkhead。</code></div>
+  <div class="fix-box" style="margin-top:6px;background:#fff8e1;border-color:#ffe082"><strong>⏱ 預估：</strong> 0.5-2 天 &nbsp;·&nbsp; <strong>回歸測試：</strong> 用測試 stub 將 Spotify call sleep 2 秒，同時發兩個 request，斷言第二個 request 不被第一個同步 call 阻塞。</div>
+</div><div class="finding severity-high">
+  <div class="finding-header"><h4>4. 關鍵行為缺少自動化測試與 CI，release confidence 很低</h4><span class="badge badge-high">High</span><span class="badge badge-confirmed">Confirmed</span></div>
+  <div class="finding-meta"><span>📁 Testing / Release</span><span>📍 backend/test_keys.py:1-40; repository inventory</span><span>🎯 tests / CI</span></div>
+  <div class="problem"><strong>問題：</strong>核心流程包含繪圖、LLM 對話、Spotify 搜尋、DB 儲存、評分與多語言 prompt，但沒有自動化測試能在改動後阻止回歸。這次 API_BASE 未定義就是語法檢查抓不到、流程測試會抓到的類型。</div>
+  <div class="problem"><strong>為什麼重要：</strong>缺少測試會讓小改動直接破壞 production workflow，尤其是 AI prompt token、frontend state 和 DB persistence 互相耦合。</div>
+  <div class="problem"><strong>真實失敗情境：</strong>開發者調整 frontend config 後只跑 node --check，部署後使用者點 Completed 才發現 /chat 根本無法呼叫。</div>
+  <div class="evidence">File: backend/test_keys.py:1-40; repository inventory
+Function / Module: tests / CI
+Relevant behavior: repo 只有 backend/test_keys.py 這種手動外部 API smoke script；沒有 pytest、frontend tests、Playwright/Cypress、CI workflow 或 test manifest。</div>
+  <div class="fix-box"><div class="fix-label">最小修復 / 長期修復</div><code>Minimal fix: 加入 pytest for backend endpoint contracts，並加入 Playwright happy path：draw → chat → song card → save session → rate。
+Better long-term fix: 建立 CI：py_compile/import smoke、backend contract tests、frontend smoke/E2E、lint/secret scan、Docker build。</code></div>
+  <div class="fix-box" style="margin-top:6px;background:#fff8e1;border-color:#ffe082"><strong>⏱ 預估：</strong> 1-3 天 &nbsp;·&nbsp; <strong>回歸測試：</strong> CI 中跑 Playwright mock backend 測試，明確 assert no console errors and /chat called once。</div>
+</div><div class="finding severity-medium">
+  <div class="finding-header"><h4>5. process-local session 與 db id 對應在重啟或多 instance 時失效</h4><span class="badge badge-medium">Medium</span><span class="badge badge-confirmed">Confirmed</span></div>
+  <div class="finding-meta"><span>📁 Stability / Data-Integrity</span><span>📍 backend/main.py:27-51, 245, 249-266; backend/agent.py:13-16, 341-365</span><span>🎯 _session_db_ids, session_memories</span></div>
+  <div class="problem"><strong>問題：</strong>App Runner/ECS 可能重啟、scale out 或開多 worker；使用者若在 session save 後被導到另一個 instance，/rate 或 /spotify-opened 會因本機 _session_db_ids 沒資料而 403。chat history 也會在重啟或跨 instance 時消失。</div>
+  <div class="problem"><strong>為什麼重要：</strong>這會造成 analytics 資料不完整、評分遺失，以及使用者在正常部署事件後遇到隨機失敗。</div>
+  <div class="problem"><strong>真實失敗情境：</strong>session-complete 在 instance A 回傳 db id；使用者 2 秒後點星星，load balancer 把 /rate 導到 instance B，B 沒有該 session mapping，回 403。</div>
+  <div class="evidence">File: backend/main.py:27-51, 245, 249-266; backend/agent.py:13-16, 341-365
+Function / Module: _session_db_ids, session_memories
+Relevant behavior: session memory 與 db_session_id link 都保存在單一 Python process 記憶體。</div>
+  <div class="fix-box"><div class="fix-label">最小修復 / 長期修復</div><code>Minimal fix: 把 session_id 到 db_session_id 的校驗改為查 DB：WHERE id=%s AND frontend_session_id=%s。
+Better long-term fix: 把 conversation/session state 移到 Redis 或 DB，設定 TTL，並支援多 instance。</code></div>
+  <div class="fix-box" style="margin-top:6px;background:#fff8e1;border-color:#ffe082"><strong>⏱ 預估：</strong> 0.5-1 天 &nbsp;·&nbsp; <strong>回歸測試：</strong> integration test：先寫入 session，再清空 _session_db_ids 或模擬新 app process，/rate 仍能用 DB 關聯驗證成功。</div>
+</div><div class="finding severity-medium">
+  <div class="finding-header"><h4>6. 資料庫 schema 與 migration 不在 repo，部署與資料一致性不可重現</h4><span class="badge badge-medium">Medium</span><span class="badge badge-confirmed">Confirmed</span></div>
+  <div class="finding-meta"><span>📁 Data-Integrity / Release</span><span>📍 backend/database.py:26-57, 100-110; rg CREATE TABLE/migration result</span><span>🎯 sessions table access</span></div>
+  <div class="problem"><strong>問題：</strong>新的環境、災難復原或 schema 變更都只能靠口頭記憶或手動資料庫狀態。ON CONFLICT(frontend_session_id) 也依賴未版本化 unique index。</div>
+  <div class="problem"><strong>為什麼重要：</strong>schema 漂移會造成 production deploy 後才出現 SQL error，或不同環境資料欄位不一致。</div>
+  <div class="problem"><strong>真實失敗情境：</strong>新建 Sydney DB 後部署 backend，第一個 /session-complete 呼叫 INSERT INTO sessions 時因欄位或 constraint 不存在而 500。</div>
+  <div class="evidence">File: backend/database.py:26-57, 100-110; rg CREATE TABLE/migration result
+Function / Module: sessions table access
+Relevant behavior: database.py 假設 sessions table、song_ratings、JSONB 欄位與 unique constraint 存在，但 repo 沒有 CREATE TABLE/ALTER TABLE migration。</div>
+  <div class="fix-box"><div class="fix-label">最小修復 / 長期修復</div><code>Minimal fix: 加入 migrations/001_create_sessions.sql，包含 table、JSONB defaults、unique(frontend_session_id)、必要 index。
+Better long-term fix: 使用 Alembic 或明確 migration runner，在部署前自動檢查/套用 schema version。</code></div>
+  <div class="fix-box" style="margin-top:6px;background:#fff8e1;border-color:#ffe082"><strong>⏱ 預估：</strong> 0.5-1 天 &nbsp;·&nbsp; <strong>回歸測試：</strong> 在空 PostgreSQL container 中跑 migration，再跑 save_session/append_song_rating integration test。</div>
+</div><div class="finding severity-medium">
+  <div class="finding-header"><h4>7. 模型 JSON fallback 會接受夾帶文字中的外層物件，輸出驗證過寬</h4><span class="badge badge-medium">Medium</span><span class="badge badge-confirmed">Confirmed</span></div>
+  <div class="finding-meta"><span>📁 AI-Safety / Type-Safety</span><span>📍 backend/agent.py:323-338, 425-563</span><span>🎯 _parse_json_response and model result functions</span></div>
+  <div class="problem"><strong>問題：</strong>這讓模型可以在非 JSON 文字裡夾帶任意 JSON 物件而被接受，且沒有 schema 驗證 scores 長度、欄位型別、URL/語言等 contract。</div>
+  <div class="problem"><strong>為什麼重要：</strong>AI 輸出本身是低信任邊界；寬鬆解析會讓 prompt drift 或 injection 更難被發現，並把錯誤資料送到 Spotify/DB。</div>
+  <div class="problem"><strong>真實失敗情境：</strong>模型回覆「Sure, here is why... {&quot;queries&quot;:[...]}」或含有兩個 JSON 片段，fallback 可能接受非預期外層物件，playlist/song result contract 仍被當成功。</div>
+  <div class="evidence">File: backend/agent.py:323-338, 425-563
+Function / Module: _parse_json_response and model result functions
+Relevant behavior: 若 json.loads 失敗，_parse_json_response 會抓第一個 { 到最後一個 } 再解析。</div>
+  <div class="fix-box"><div class="fix-label">最小修復 / 長期修復</div><code>Minimal fix: 移除 outermost brace fallback，使用 Pydantic model 驗證每個 LLM JSON response，缺欄位或多餘文字直接回 structured error。
+Better long-term fix: 使用 OpenAI structured outputs / JSON schema，並加 eval cases 覆蓋 malformed output、prompt injection 和語言切換。</code></div>
+  <div class="fix-box" style="margin-top:6px;background:#fff8e1;border-color:#ffe082"><strong>⏱ 預估：</strong> 0.5-1 天 &nbsp;·&nbsp; <strong>回歸測試：</strong> unit test：餵入含前後文字、缺欄位、錯型別、scores 長度錯誤的 response，斷言解析失敗且不呼叫 Spotify。</div>
+</div><div class="finding severity-medium">
+  <div class="finding-header"><h4>8. 使用者心理/行為資料與 IP geolocation 缺少保留、刪除與同意邊界</h4><span class="badge badge-medium">Medium</span><span class="badge badge-confirmed">Confirmed</span></div>
+  <div class="finding-meta"><span>📁 Privacy</span><span>📍 frontend/app.js:292-303, 1058-1075; backend/main.py:196-230; backend/database.py:27-42</span><span>🎯 session-complete payload and persistence</span></div>
+  <div class="problem"><strong>問題：</strong>這些資料可推斷情緒、行為模式、語言、地區與音樂偏好，但 repo 沒有 privacy notice、retention policy、delete/export path 或資料最小化策略。</div>
+  <div class="problem"><strong>為什麼重要：</strong>若公開上線，這是明確的個資/敏感推論資料治理風險，也提高資料庫外洩時的傷害。</div>
+  <div class="problem"><strong>真實失敗情境：</strong>使用者要求刪除資料或詢問保存多久；系統沒有 endpoint、policy 或資料標記能定位與刪除該 session。</div>
+  <div class="evidence">File: frontend/app.js:292-303, 1058-1075; backend/main.py:196-230; backend/database.py:27-42
+Function / Module: session-complete payload and persistence
+Relevant behavior: frontend 收集繪圖 strokes、telemetry、timezone、device type；backend 以 IP 查 countryCode 並儲存 conversation、ai_keywords、style description、like likelihood。</div>
+  <div class="fix-box"><div class="fix-label">最小修復 / 長期修復</div><code>Minimal fix: 新增簡短 privacy notice、資料保存期限、刪除請求流程；只保存必要欄位，對 strokes/conversation 設 TTL 或 opt-in。
+Better long-term fix: 建立 data retention job、delete/export endpoint、欄位級資料分類與 production access policy。</code></div>
+  <div class="fix-box" style="margin-top:6px;background:#fff8e1;border-color:#ffe082"><strong>⏱ 預估：</strong> 1-2 天 &nbsp;·&nbsp; <strong>回歸測試：</strong> integration test：給定 session_id 能刪除 session row 與 ratings，並確認後續查詢回 404/empty。</div>
+</div><div class="finding severity-medium">
+  <div class="finding-header"><h4>9. 核心 UI 對鍵盤與輔助科技不可完整操作</h4><span class="badge badge-medium">Medium</span><span class="badge badge-confirmed">Confirmed</span></div>
+  <div class="finding-meta"><span>📁 Accessibility / Frontend-State</span><span>📍 frontend/index.html:15-16, 52-57, 84-94; frontend/app.js:485-489, 867-872</span><span>🎯 canvas drawing, color picker, chat controls</span></div>
+  <div class="problem"><strong>問題：</strong>使用鍵盤或 screen reader 的使用者無法完成核心「畫圖」任務，也難以理解 chat dialog 開啟狀態；icon-only controls 依賴 title，不等同完整 accessible name/description。</div>
+  <div class="problem"><strong>為什麼重要：</strong>Accessibility 是 public UI 的 release gate；核心 workflow 不可達會排除一群使用者，也讓自動化 UX 測試難覆蓋。</div>
+  <div class="problem"><strong>真實失敗情境：</strong>鍵盤使用者 tab 到頁面時無法在 canvas 上繪圖或選擇工具狀態；chat panel 開啟後 focus 不被移入，也沒有語意告知這是 dialog。</div>
+  <div class="evidence">File: frontend/index.html:15-16, 52-57, 84-94; frontend/app.js:485-489, 867-872
+Function / Module: canvas drawing, color picker, chat controls
+Relevant behavior: 主要創作介面是 canvas pointer/touch flow；color button 是 div 包 input；send button 只有「↑」文字，dialog 沒有 role/aria-modal，畫布沒有替代操作。</div>
+  <div class="fix-box"><div class="fix-label">最小修復 / 長期修復</div><code>Minimal fix: 為 chat dialog 加 role=&quot;dialog&quot;/aria-modal/label；send/song/close 加 aria-label；color control 改 button+label；提供文字 mood input fallback。
+Better long-term fix: 加 keyboard drawing mode 或非繪圖替代流程，並用 axe/Playwright 做 accessibility smoke test。</code></div>
+  <div class="fix-box" style="margin-top:6px;background:#fff8e1;border-color:#ffe082"><strong>⏱ 預估：</strong> 1-3 天 &nbsp;·&nbsp; <strong>回歸測試：</strong> Playwright accessibility test：tab order 能到 chat input/send/song，dialog 開啟時 focus 移入；axe 無 critical violations。</div>
+</div><div class="finding severity-medium">
+  <div class="finding-header"><h4>10. Docker/App Runner release 設定缺少 healthcheck、non-root runtime 與 artifact reproducibility</h4><span class="badge badge-medium">Medium</span><span class="badge badge-confirmed">Confirmed</span></div>
+  <div class="finding-meta"><span>📁 Release / Supply-Chain</span><span>📍 backend/Dockerfile:1-12; backend/apprunner.yaml:1-10; backend/migrate-to-sydney.sh:21-28</span><span>🎯 Dockerfile, App Runner config, migration script</span></div>
+  <div class="problem"><strong>問題：</strong>部署 artifact 不易重現與回滾；container compromise 時權限較大；健康檢查與 readiness 不在 artifact 中明確定義；latest tag 讓追蹤與 rollback 困難。</div>
+  <div class="problem"><strong>為什麼重要：</strong>release 出問題時很難知道哪個 image 在跑，也無法可靠回到上一版。</div>
+  <div class="problem"><strong>真實失敗情境：</strong>新 image 推到 latest 後出現 API_BASE/CORS 問題；ECR latest 被覆蓋，沒有 immutable tag 或 digest 記錄可快速 rollback。</div>
+  <div class="evidence">File: backend/Dockerfile:1-12; backend/apprunner.yaml:1-10; backend/migrate-to-sydney.sh:21-28
+Function / Module: Dockerfile, App Runner config, migration script
+Relevant behavior: Dockerfile 使用 python:3.11-slim tag、以 root 執行、沒有 HEALTHCHECK；App Runner config 只有 build/run command；push script 用 latest tag。</div>
+  <div class="fix-box"><div class="fix-label">最小修復 / 長期修復</div><code>Minimal fix: 以 commit SHA/tag 標記 image；Dockerfile 加 non-root user 與 HEALTHCHECK；App Runner 設定 production env 與 health path。
+Better long-term fix: 加入 CI build/push provenance、SBOM、image vulnerability scan、digest pinning 與 rollback runbook。</code></div>
+  <div class="fix-box" style="margin-top:6px;background:#fff8e1;border-color:#ffe082"><strong>⏱ 預估：</strong> 0.5-1 天 &nbsp;·&nbsp; <strong>回歸測試：</strong> CI 測 Docker build 後以非 root user 啟動，/health 在 container 中回 200，image tag 包含 git SHA。</div>
+</div><div class="finding severity-low">
+  <div class="finding-header"><h4>11. repo 缺少開發/部署文件，必要 env 與資料流程只能靠猜</h4><span class="badge badge-low">Low</span><span class="badge badge-confirmed">Confirmed</span></div>
+  <div class="finding-meta"><span>📁 Documentation / Configuration</span><span>📍 .gitignore:1-8; backend/requirements.txt:1-7; backend/apprunner.yaml:1-10; repository inventory</span><span>🎯 documentation surface</span></div>
+  <div class="problem"><strong>問題：</strong>新接手者不知道如何設定 DB、OpenAI、Spotify、ALLOWED_ORIGINS、migration、local dev server 或 production deploy。</div>
+  <div class="problem"><strong>為什麼重要：</strong>文件缺口會造成設定錯誤、部署延遲，也讓安全/隱私要求無法被穩定執行。</div>
+  <div class="problem"><strong>真實失敗情境：</strong>新的部署者只看 repo 無法知道 ALLOWED_ORIGINS 必須設成前端 domain，導致 production browser CORS 失敗或被迫放寬為 wildcard。</div>
+  <div class="evidence">File: .gitignore:1-8; backend/requirements.txt:1-7; backend/apprunner.yaml:1-10; repository inventory
+Function / Module: documentation surface
+Relevant behavior: repo 沒有 README 或 operator docs；必要 env vars 分散在程式碼中；.gitignore 提到 project-details.md 和 analysis/ 為本機資料但未提供公開替代說明。</div>
+  <div class="fix-box"><div class="fix-label">最小修復 / 長期修復</div><code>Minimal fix: 新增 README.md：local setup、env var table、run/test commands、deploy checklist、privacy/data notes。
+Better long-term fix: 補 ADR/runbook：architecture map、data retention、rollback、incident debugging、schema migration。</code></div>
+  <div class="fix-box" style="margin-top:6px;background:#fff8e1;border-color:#ffe082"><strong>⏱ 預估：</strong> 2-4 小時 &nbsp;·&nbsp; <strong>回歸測試：</strong> 文件 smoke test：全新 clone 按 README 建 venv、設定範例 env、啟動 backend/frontend，並跑 import smoke。</div>
+</div>
+<h3 class="section-title" id="architecture">🏗 架構與模組邊界</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> backend/main.py, agent.py, tools.py, database.py, frontend/app.js；request/data/state flow；全域 state 搜尋。</p><p><strong>Exclusions / limits:</strong> 未做動態 dependency graph；未讀 psy_resource PDF。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 2 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>FastAPI async handlers 內執行同步 LLM、HTTP 與 DB I/O，會阻塞 event loop</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>process-local session 與 db id 對應在重啟或多 instance 時失效</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> Backend 分層簡單，API、agent、Spotify tools、database adapter 目前檔案邊界可辨識。</div><div class="check-item"><span class="check">✓</span> 外部 API adapter 已集中在 backend/tools.py。</div></div></div></div>
+<h3 class="section-title" id="security">🔒 安全</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> 所有 FastAPI endpoint、CORS、rate limiter、env/secrets 搜尋、frontend rendering、.gitignore 與 tracked secret check。</p><p><strong>Exclusions / limits:</strong> 未跑 gitleaks/semgrep；未掃描 production cloud 設定。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 1 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>匿名 LLM/Spotify 成本路徑仍可被繞過 rate limit 濫用</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> SQL 使用 psycopg2 parameter binding，未見字串拼接 SQL。</div><div class="check-item"><span class="check">✓</span> frontend song/playlist card 已使用 textContent 與 URL validation 減少 XSS 風險。</div></div></div></div>
+<h3 class="section-title" id="stability">⚡ 穩定性與錯誤處理</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> py_compile、node --check、endpoint flow、external call timeout、catch/except 搜尋。</p><p><strong>Exclusions / limits:</strong> 因缺 fastapi package，無法 import/run backend。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 3 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>前端使用未定義的 API_BASE，所有後端互動在執行期失敗</td><td><span class="badge badge-critical">Critical</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>FastAPI async handlers 內執行同步 LLM、HTTP 與 DB I/O，會阻塞 event loop</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>process-local session 與 db id 對應在重啟或多 instance 時失效</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> Spotify HTTP calls 有 explicit timeout=10。</div><div class="check-item"><span class="check">✓</span> DB writes 使用 context manager 釋放 connection。</div></div></div></div>
+<h3 class="section-title" id="performance">🚀 效能與擴展性</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> LLM/Spotify 呼叫次數、sync I/O、frontend single-file flow、in-memory collections、rate limiter。</p><p><strong>Exclusions / limits:</strong> 未做 load test 或 browser performance trace。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 2 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>FastAPI async handlers 內執行同步 LLM、HTTP 與 DB I/O，會阻塞 event loop</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>匿名 LLM/Spotify 成本路徑仍可被繞過 rate limit 濫用</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> Spotify candidate search limit=3，artist genres batch endpoint 一次查 ids。</div><div class="check-item"><span class="check">✓</span> session memory 已有 TTL 與 MAX_SESSIONS。</div></div></div></div>
+<h3 class="section-title" id="testing">🧪 測試品質</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> test file 搜尋、py_compile、node --check、CI/tool availability。</p><p><strong>Exclusions / limits:</strong> 未安裝 dependencies，無法跑 backend import/runtime tests。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 1 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>關鍵行為缺少自動化測試與 CI，release confidence 很低</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> Python syntax compilation passed。</div><div class="check-item"><span class="check">✓</span> JavaScript syntax check passed。</div></div></div></div>
+<h3 class="section-title" id="maintainability">📐 可維護性</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> wc -l、module responsibility、duplication/pattern 搜尋、frontend state review。</p><p><strong>Exclusions / limits:</strong> 未做 automated complexity metric。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 2 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>關鍵行為缺少自動化測試與 CI，release confidence 很低</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>repo 缺少開發/部署文件，必要 env 與資料流程只能靠猜</td><td><span class="badge badge-low">Low</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> Backend 檔案小且職責大致分開。</div><div class="check-item"><span class="check">✓</span> 外部 Spotify 操作集中於 tools.py。</div></div></div></div>
+<h3 class="section-title" id="design">📋 設計原則</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> principles rubric: SRP、blocking async、global mutable state、config hardcoding、fail-fast。</p><p><strong>Exclusions / limits:</strong> 未做完整 mutation/complexity tooling。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 3 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>FastAPI async handlers 內執行同步 LLM、HTTP 與 DB I/O，會阻塞 event loop</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>process-local session 與 db id 對應在重啟或多 instance 時失效</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>核心 UI 對鍵盤與輔助科技不可完整操作</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> 部分邊界已用 Pydantic Field 限制輸入長度。</div><div class="check-item"><span class="check">✓</span> DB access 已從 handler 分離到 database.py。</div></div></div></div>
+<h3 class="section-title" id="release">🚢 發布與部署</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> Dockerfile、apprunner.yaml、migration script、requirements、frontend API config、git status。</p><p><strong>Exclusions / limits:</strong> 未存取 AWS console 或 production env。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 5 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>前端使用未定義的 API_BASE，所有後端互動在執行期失敗</td><td><span class="badge badge-critical">Critical</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>關鍵行為缺少自動化測試與 CI，release confidence 很低</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>資料庫 schema 與 migration 不在 repo，部署與資料一致性不可重現</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>Docker/App Runner release 設定缺少 healthcheck、non-root runtime 與 artifact reproducibility</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>repo 缺少開發/部署文件，必要 env 與資料流程只能靠猜</td><td><span class="badge badge-low">Low</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> App Runner yaml 有明確 run command 與 port。</div><div class="check-item"><span class="check">✓</span> /health endpoint 存在。</div></div></div></div>
+<h3 class="section-title" id="documentation">📚 文件準確性</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> README/docs inventory、.gitignore、本機 script comments。</p><p><strong>Exclusions / limits:</strong> project-details.md 被 gitignore 且未讀；可能有本機私有說明未納入審計。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 1 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>repo 缺少開發/部署文件，必要 env 與資料流程只能靠猜</td><td><span class="badge badge-low">Low</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> migrate-to-sydney.sh 內有基本操作註解。</div><div class="check-item"><span class="check">✓</span> 程式碼區塊註解對主要流程有一定導覽作用。</div></div></div></div>
+<h3 class="section-title" id="configuration">⚙️ 設定安全</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> env var usage、hardcoded URL、CORS defaults、Docker/App Runner config、requirements。</p><p><strong>Exclusions / limits:</strong> 未檢查實際 production env values。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 4 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>前端使用未定義的 API_BASE，所有後端互動在執行期失敗</td><td><span class="badge badge-critical">Critical</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>匿名 LLM/Spotify 成本路徑仍可被繞過 rate limit 濫用</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>Docker/App Runner release 設定缺少 healthcheck、non-root runtime 與 artifact reproducibility</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>repo 缺少開發/部署文件，必要 env 與資料流程只能靠猜</td><td><span class="badge badge-low">Low</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> backend/.env 未被 git 追蹤，.gitignore 有 .env。</div><div class="check-item"><span class="check">✓</span> 多數 secrets 由環境變數讀取。</div></div></div></div>
+<h3 class="section-title" id="observability">🩺 可觀測性</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> print/log 搜尋、health endpoint、error paths、deployment config。</p><p><strong>Exclusions / limits:</strong> 未檢查 cloud logging/metrics/alerts。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 2 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>Docker/App Runner release 設定缺少 healthcheck、non-root runtime 與 artifact reproducibility</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>repo 缺少開發/部署文件，必要 env 與資料流程只能靠猜</td><td><span class="badge badge-low">Low</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> /health endpoint 可供基礎健康檢查。</div><div class="check-item"><span class="check">✓</span> 部分外部 API failure 有 log。</div></div></div></div>
+<h3 class="section-title" id="data-integrity">🧱 資料完整性</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> database.py SQL、session complete flow、rating/open tracking、migration 搜尋。</p><p><strong>Exclusions / limits:</strong> 未連線 DB 檢查 schema/index/constraints。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 2 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>process-local session 與 db id 對應在重啟或多 instance 時失效</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>資料庫 schema 與 migration 不在 repo，部署與資料一致性不可重現</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> SQL write 使用 parameterized query。</div><div class="check-item"><span class="check">✓</span> song_ratings append 使用 COALESCE 處理 NULL。</div></div></div></div>
+<h3 class="section-title" id="privacy">🛡 隱私與資料治理</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> telemetry payload、conversation persistence、IP geolocation、logs、ignored analysis data。</p><p><strong>Exclusions / limits:</strong> 未檢查真實 DB data 或 privacy policy 網站頁面。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 1 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>使用者心理/行為資料與 IP geolocation 缺少保留、刪除與同意邊界</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> .gitignore 明確排除 analysis/ 並註記含 DB credentials + user data。</div><div class="check-item"><span class="check">✓</span> 未列印或讀取 backend/.env secret values。</div></div></div></div>
+<h3 class="section-title" id="accessibility">⌨️ Accessibility / UX 正確性</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> index.html controls、canvas workflow、button labels、dialog semantics、CSS responsive rules。</p><p><strong>Exclusions / limits:</strong> 未用真實 browser/axe 驗證；結論以 DOM/source inspection 為主。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 1 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>核心 UI 對鍵盤與輔助科技不可完整操作</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> 大多數 icon controls 有 title，圖片 alt 有設定來源。</div><div class="check-item"><span class="check">✓</span> input 字級 &gt;=16px 避免 iOS focus zoom。</div></div></div></div>
+<h3 class="section-title" id="supply-chain">🔗 供應鏈與可重現性</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> requirements pins、Dockerfile base image、ECR push script、tool availability。</p><p><strong>Exclusions / limits:</strong> 未跑 pip-audit/trivy/syft，無網路 CVE 查詢。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 1 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>Docker/App Runner release 設定缺少 healthcheck、non-root runtime 與 artifact reproducibility</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> Python requirements 使用 exact version pins。</div><div class="check-item"><span class="check">✓</span> 沒有發現 tracked .env secret。</div></div></div></div>
+<h3 class="section-title" id="cost">💸 成本與資源經濟</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> LLM call sites、Spotify call counts、rate limiter、image payload bounds。</p><p><strong>Exclusions / limits:</strong> 未讀 production billing/quota/alerts。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 2 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>匿名 LLM/Spotify 成本路徑仍可被繞過 rate limit 濫用</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>FastAPI async handlers 內執行同步 LLM、HTTP 與 DB I/O，會阻塞 event loop</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> image payload 有 5.5MB max_length。</div><div class="check-item"><span class="check">✓</span> Spotify candidate search bounded to 3。</div></div></div></div>
+<h3 class="section-title" id="ai-safety">🤖 AI / LLM 安全</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> SYSTEM_PROMPT、JSON parsing、model result flow、tool/action boundary、cost path。</p><p><strong>Exclusions / limits:</strong> 未跑 prompt injection eval 或 red-team corpus。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 2 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>匿名 LLM/Spotify 成本路徑仍可被繞過 rate limit 濫用</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>模型 JSON fallback 會接受夾帶文字中的外層物件，輸出驗證過寬</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> 模型不直接執行任意 filesystem/DB mutation；只產生 song/playlist/search metadata。</div><div class="check-item"><span class="check">✓</span> song card 使用 Spotify 實際回傳 track，而不是直接信任模型 song title。</div></div></div></div>
+<h3 class="section-title" id="fallback">🧯 Fallback / 防禦式程式碼</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> catch/except、fallback regex、JSON parsing fallback、silent errors。</p><p><strong>Exclusions / limits:</strong> 未做 chaos/runtime fault injection。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 2 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>模型 JSON fallback 會接受夾帶文字中的外層物件，輸出驗證過寬</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>前端使用未定義的 API_BASE，所有後端互動在執行期失敗</td><td><span class="badge badge-critical">Critical</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> Spotify failures return controlled empty/error objects instead of crashing。</div><div class="check-item"><span class="check">✓</span> frontend song failure resets cityRevealed 允許重試。</div></div></div></div>
+<h3 class="section-title" id="testing-authenticity">🧪 Testing Authenticity</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> test inventory、test_keys.py review、runtime check results。</p><p><strong>Exclusions / limits:</strong> 沒有正式 test suite 可深入判斷 mock quality。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 1 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>關鍵行為缺少自動化測試與 CI，release confidence 很低</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> 現有 test_keys.py 至少能人工驗證三個外部 API keys。</div></div></div></div>
+<h3 class="section-title" id="type-safety">🧩 Type Safety</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> Pydantic models、Optional fields、dict/list boundaries、JS runtime globals、LLM JSON parsing。</p><p><strong>Exclusions / limits:</strong> Python/JS 無靜態 typechecker；未跑 mypy/tsc。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 2 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>前端使用未定義的 API_BASE，所有後端互動在執行期失敗</td><td><span class="badge badge-critical">Critical</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>模型 JSON fallback 會接受夾帶文字中的外層物件，輸出驗證過寬</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> FastAPI request models 對多個欄位已有 max_length/min_length。</div><div class="check-item"><span class="check">✓</span> score range 在 /rate 有 explicit check。</div></div></div></div>
+<h3 class="section-title" id="frontend-state">🧠 Frontend State</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> frontend/app.js state vars、workflow transitions、fetch/rendering、resize/keyboard handling。</p><p><strong>Exclusions / limits:</strong> 未用 browser 重現所有 responsive states。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 2 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>前端使用未定義的 API_BASE，所有後端互動在執行期失敗</td><td><span class="badge badge-critical">Critical</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>核心 UI 對鍵盤與輔助科技不可完整操作</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> state variables 集中在 app.js，容易追蹤 current workflow。</div><div class="check-item"><span class="check">✓</span> saveSession 現在回傳 boolean 並只在成功後顯示 rating。</div></div></div></div>
+<h3 class="section-title" id="backend-api">🔌 Backend API</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> High</p><p><strong>Inspected evidence:</strong> all FastAPI endpoints、request/response shapes、validation、status/error handling。</p><p><strong>Exclusions / limits:</strong> 未跑 live HTTP contract tests。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 3 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>匿名 LLM/Spotify 成本路徑仍可被繞過 rate limit 濫用</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>FastAPI async handlers 內執行同步 LLM、HTTP 與 DB I/O，會阻塞 event loop</td><td><span class="badge badge-high">High</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr><tr><td>process-local session 與 db id 對應在重啟或多 instance 時失效</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> Pydantic request models 定義了 session_id、image、text 欄位限制。</div><div class="check-item"><span class="check">✓</span> score 不在 1-5 時有 explicit response。</div></div></div></div>
+<h3 class="section-title" id="dependency-weight">⚖️ Dependency Weight</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> requirements.txt、frontend no package manifest、Docker image base。</p><p><strong>Exclusions / limits:</strong> 未做 dependency size analysis。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 1 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>Docker/App Runner release 設定缺少 healthcheck、non-root runtime 與 artifact reproducibility</td><td><span class="badge badge-medium">Medium</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> 前端無 npm dependency，供應面較小。</div><div class="check-item"><span class="check">✓</span> 後端 dependency list 短且版本 pinned。</div></div></div></div>
+<h3 class="section-title" id="code-consistency">🧭 Code Consistency</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> naming、endpoint patterns、error return patterns、frontend/backend naming drift。</p><p><strong>Exclusions / limits:</strong> 未跑 formatter/linter。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 1 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>repo 缺少開發/部署文件，必要 env 與資料流程只能靠猜</td><td><span class="badge badge-low">Low</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> Backend 檔名與職責命名大致一致。</div><div class="check-item"><span class="check">✓</span> API endpoint naming 大致使用 kebab-case。</div></div></div></div>
+<h3 class="section-title" id="comment-coverage">💬 Comment Coverage</h3>
+<div class="card"><div class="card-header">🧭 覆蓋說明</div><div class="card-body"><p><strong>Coverage:</strong> Medium</p><p><strong>Inspected evidence:</strong> public functions/comments、README absence、stale city naming、section comments。</p><p><strong>Exclusions / limits:</strong> 未讀 ignored project-details.md。</p></div></div>
+<div class="card"><div class="card-header">已確認 <span style="font-weight:400;font-size:13px;color:var(--text-secondary)">· 1 個發現</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>發現</th><th style="width:100px">嚴重程度</th><th style="width:100px">狀態</th></tr></thead><tbody><tr><td>repo 缺少開發/部署文件，必要 env 與資料流程只能靠猜</td><td><span class="badge badge-low">Low</span></td><td><span class="badge badge-confirmed">Confirmed</span></td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ 已驗證良好實作</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> 多數非平凡 frontend sections 有導覽註解。</div><div class="check-item"><span class="check">✓</span> database.py 函式 docstring 說明 upsert/rating 意圖。</div></div></div></div>
+<h3 class="section-title" id="principles">📋 設計原則</h3>
+<div class="card"><div class="card-header">Principle violations</div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Principle</th><th>Count</th><th style="width:100px">Severity</th><th>Area</th></tr></thead><tbody><tr><td>9.1 Configuration Over Hardcoding</td><td>2</td><td><span class="badge badge-high">High</span></td><td>frontend API base 與 deployment origin 設定；F-01/F-11</td></tr><tr><td>10.1 No Blocking Calls in Async Context</td><td>1</td><td><span class="badge badge-high">High</span></td><td>FastAPI async handlers 直接呼叫同步 LLM/HTTP/DB；F-03</td></tr><tr><td>10.2 Unbounded Resources Must Not Grow Forever</td><td>2</td><td><span class="badge badge-medium">Medium</span></td><td>process-local request/session maps 需要跨 instance 儲存與更完整 eviction；F-05</td></tr><tr><td>1.1 Single Responsibility / 1.2 File Size Limit</td><td>1</td><td><span class="badge badge-medium">Medium</span></td><td>frontend/app.js 1333 行混合 UI、繪圖、state、network、persistence</td></tr><tr><td>4.4 Fail-Fast / Type Boundary</td><td>1</td><td><span class="badge badge-medium">Medium</span></td><td>LLM JSON fallback 過寬；F-07</td></tr><tr><td>6.1 Do not Swallow Errors</td><td>多處</td><td><span class="badge badge-low">Low</span></td><td>部分 frontend/backend catch 只 console 或回空結果，需結構化錯誤與 observability</td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header">✅ Followed principles</div><div class="card-body"><div class="check-list"><div class="check-item"><span class="check">✓</span> SQL 寫入使用 parameterized query，避免直接字串拼接。</div><div class="check-item"><span class="check">✓</span> Pydantic request model 對多個外部輸入有長度界線。</div><div class="check-item"><span class="check">✓</span> Spotify HTTP calls 設定 timeout。</div><div class="check-item"><span class="check">✓</span> 外部 Spotify API 封裝在 backend/tools.py，邊界相對集中。</div><div class="check-item"><span class="check">✓</span> frontend 對模型/Spotify 回傳文字使用 textContent 建卡片。</div></div></div></div>
+<h3 class="section-title" id="fix-order">🎯 Recommended Fix Order</h3>
+<div class="card"><div class="card-header"><span>⚡ 立即處理</span><span class="badge badge-high">High urgency</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>#</th><th>修復</th><th>預估</th><th>風險</th></tr></thead><tbody><tr><td>1</td><td>補回 API_BASE 定義並加入 frontend smoke test</td><td>15-30 分鐘</td><td>目前核心 workflow 直接阻斷</td></tr><tr><td>2</td><td>修正 rate limiter 的 trusted proxy/IP 邏輯，並加 signed session 或 Turnstile</td><td>0.5-1 天</td><td>降低 LLM 成本濫用</td></tr><tr><td>3</td><td>把 blocking calls 移出 async event loop</td><td>0.5-2 天</td><td>避免流量下整體延遲</td></tr><tr><td>4</td><td>加入 backend/frontend critical path tests 與 CI</td><td>1-3 天</td><td>避免同類回歸再次上線</td></tr></tbody></table></div></div></div>
+<div class="card"><div class="card-header"><span>📅 排程處理</span><span class="badge badge-medium">Medium urgency</span></div><div class="card-body" style="padding:0"><div class="table-wrap"><table><thead><tr><th>#</th><th>修復</th><th>預估</th></tr></thead><tbody><tr><td>5</td><td>加入 DB migration 與 schema versioning</td><td>0.5-1 天</td></tr><tr><td>6</td><td>把 session/conversation state 移到 Redis/DB 或用 DB 驗證 rating/open</td><td>0.5-1 天</td></tr><tr><td>7</td><td>加 privacy notice、retention/delete path</td><td>1-2 天</td></tr><tr><td>8</td><td>補 Docker/App Runner release hardening 與 immutable image tags</td><td>0.5-1 天</td></tr><tr><td>9</td><td>補 accessibility semantics 與 keyboard-friendly fallback</td><td>1-3 天</td></tr><tr><td>10</td><td>補 README/runbook/env var table</td><td>2-4 小時</td></tr></tbody></table></div></div></div>
+<h3 class="section-title">⚡ Quick Wins</h3><div class="win-grid"><div class="win-card"><div class="win-title">補 API_BASE 一行與 smoke test</div><div class="win-meta">最高 ROI · 立即解除前端阻斷</div></div><div class="win-card"><div class="win-title">將 ALLOWED_ORIGINS 設到 production frontend domain</div><div class="win-meta">Release 必做 · 15 分鐘</div></div><div class="win-card"><div class="win-title">新增 migrations/001_create_sessions.sql</div><div class="win-meta">資料完整性 · 半天</div></div><div class="win-card"><div class="win-title">Docker image tag 改成 git SHA</div><div class="win-meta">回滾能力 · 30 分鐘</div></div><div class="win-card"><div class="win-title">為 chat dialog 加 role/aria-label</div><div class="win-meta">Accessibility quick win · 1 小時</div></div><div class="win-card"><div class="win-title">README env var table</div><div class="win-meta">交接與部署 · 1 小時</div></div></div>
+<div style="text-align:center;padding:40px 0 20px;color:var(--text-secondary);font-size:12px">報告依 fuck-my-shit-mountain full mode 產生。未讀取或揭露 backend/.env 內容；外部掃描工具不可用時已以 source inspection 取代並標註 coverage 限制。</div>
+</div>
+<script>
+  const sections = document.querySelectorAll('[id]');
+  const navLinks = document.querySelectorAll('.sidebar-nav a');
+  const observer = new IntersectionObserver((entries) => {
+    let activeId = null;
+    entries.forEach(entry => { if (entry.isIntersecting) activeId = entry.target.id; });
+    if (activeId) { navLinks.forEach(a => { a.classList.toggle('active', a.getAttribute('href') === '#' + activeId); }); }
+  }, { rootMargin: '-10% 0px -60% 0px' });
+  sections.forEach(s => observer.observe(s));
+  navLinks.forEach(a => { a.addEventListener('click', function(e) { e.preventDefault(); const target = document.querySelector(this.getAttribute('href')); if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); });
+</script>
+</body>
+</html>

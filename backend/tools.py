@@ -57,6 +57,55 @@ def get_playlists(queries: list) -> list:
     return results
 
 
+def get_songs(query: str, limit: int = 3) -> list:
+    """Search Spotify for tracks. Returns up to `limit` candidates with artist genres."""
+    print(f"[Spotify] Searching tracks: {query!r} (limit {limit})")
+    try:
+        token = get_spotify_token()
+        res = requests.get(
+            f"https://api.spotify.com/v1/search?q={quote(query)}&type=track&limit={limit}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        ).json()
+        items = res.get("tracks", {}).get("items") or []
+        artist_ids = list({t["artists"][0]["id"] for t in items if t.get("artists")})
+        genres = get_artist_genres(artist_ids, token)
+        tracks = []
+        for t in items:
+            artist = t["artists"][0] if t.get("artists") else {}
+            tracks.append({
+                "name":        t["name"],
+                "artist":      artist.get("name"),
+                "album":       t["album"]["name"],
+                "image":       t["album"]["images"][0]["url"] if t["album"]["images"] else None,
+                "preview_url": t.get("preview_url"),
+                "spotify_url": t["external_urls"]["spotify"],
+                "genres":      genres.get(artist.get("id"), []),
+            })
+        print(f"[Spotify] {len(tracks)} candidates for {query!r}")
+        return tracks
+    except Exception as e:
+        print(f"[Spotify] Track search error: {e}")
+        return []
+
+
+def get_artist_genres(artist_ids: list, token: str = None) -> dict:
+    """Genres per artist id — Spotify's closest equivalent to track tags."""
+    if not artist_ids:
+        return {}
+    try:
+        token = token or get_spotify_token()
+        res = requests.get(
+            f"https://api.spotify.com/v1/artists?ids={','.join(artist_ids[:50])}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        ).json()
+        return {a["id"]: a.get("genres", []) for a in res.get("artists", []) if a}
+    except Exception as e:
+        print(f"[Spotify] Artist genres error: {e}")
+        return {}
+
+
 def get_song(query: str) -> dict:
     """Search Spotify for a track. Returns name, artist, album art, spotify URL."""
     print(f"[Spotify] Searching track: {query!r}")
