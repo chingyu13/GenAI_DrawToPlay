@@ -47,7 +47,8 @@ const UI_STRINGS = {
         typeHere: 'Type here…', differentVibe: 'Want a different vibe? Tell me…',
         somethingDifferent: 'Want something different? Tell me…',
         rateLabel: 'Rate this pick:',
-        playlistIntro: 'Here are 3 playlists — pick whichever vibe fits 🎵' },
+        playlistIntro: 'Here are 3 playlists — pick whichever vibe fits 🎵',
+        readingDrawing: 'Reading your drawing...' },
   'en-US': { tagline: 'Draw your current mood! I\'ll pick a song to match it!',
         drawHintMouse: 'Go ahead! draw with your mouse',
         drawHintTouch: 'Go ahead! draw with your finger',
@@ -55,7 +56,8 @@ const UI_STRINGS = {
         typeHere: 'Type here…', differentVibe: 'Want a different vibe? Tell me…',
         somethingDifferent: 'Want something different? Tell me…',
         rateLabel: 'Rate this pick:',
-        playlistIntro: 'Here are 3 playlists — pick whichever vibe fits 🎵' },
+        playlistIntro: 'Here are 3 playlists — pick whichever vibe fits 🎵',
+        readingDrawing: 'Reading your drawing...' },
   'en-AU': { tagline: 'Draw how you\'re feeling — I\'ll pick a song to match!',
         drawHintMouse: 'Go on! draw with your mouse',
         drawHintTouch: 'Go on! draw with your finger',
@@ -63,7 +65,8 @@ const UI_STRINGS = {
         typeHere: 'Type here…', differentVibe: 'Want a different vibe? Tell me…',
         somethingDifferent: 'Want something different? Tell me…',
         rateLabel: 'Rate this pick:',
-        playlistIntro: 'Here are 3 playlists — pick whichever vibe fits 🎵' },
+        playlistIntro: 'Here are 3 playlists — pick whichever vibe fits 🎵',
+        readingDrawing: 'Reading your drawing...' },
   'zh-TW': { tagline: '畫現在的心情，我挑一首適合的歌給你！',
         drawHintMouse: '試試用滑鼠畫畫看吧',
         drawHintTouch: '試試用手指畫畫看吧',
@@ -71,7 +74,8 @@ const UI_STRINGS = {
         typeHere: '在這裡輸入…', differentVibe: '想換個風格？告訴我…',
         somethingDifferent: '想聽點不一樣的？告訴我…',
         rateLabel: '為我的推薦評分：',
-        playlistIntro: '這裡有 3 個歌單，挑個合你心情的吧~ 🎵' },
+        playlistIntro: '這裡有 3 個歌單，挑個合你心情的吧~ 🎵',
+        readingDrawing: '讀取畫作中...' },
   'zh-CN': { tagline: '画下现在的心情，我挑一首合适的歌给你！',
         drawHintMouse: '试试用鼠标画画看吧',
         drawHintTouch: '试试用手指画画看吧',
@@ -79,7 +83,8 @@ const UI_STRINGS = {
         typeHere: '在这里输入…', differentVibe: '想换个风格？告诉我…',
         somethingDifferent: '想听点不一样的？告诉我…',
         rateLabel: '为我的推荐评分：',
-        playlistIntro: '这里有 3 个歌单，挑个合你心情的吧~ 🎵' },
+        playlistIntro: '这里有 3 个歌单，挑个合你心情的吧~ 🎵',
+        readingDrawing: '读取画作中...' },
   ja: { tagline: '今の気分を描いてね、ぴったりの一曲を選んであげる！',
         drawHintMouse: 'マウスで描いてみてね',
         drawHintTouch: '指で描いてみてね',
@@ -87,7 +92,8 @@ const UI_STRINGS = {
         typeHere: 'ここに入力…', differentVibe: '違う雰囲気がいい？教えてね…',
         somethingDifferent: '他のも聴きたい？教えてね…',
         rateLabel: 'この曲を評価：',
-        playlistIntro: 'プレイリストを3つ用意したよ——好きなのを選んでね 🎵' },
+        playlistIntro: 'プレイリストを3つ用意したよ——好きなのを選んでね 🎵',
+        readingDrawing: '作品を読み取っています...' },
   ko: { tagline: '지금 기분을 그려봐요, 어울리는 노래 하나 골라줄게요!',
         drawHintMouse: '마우스로 그려 보세요',
         drawHintTouch: '손가락으로 그려 보세요',
@@ -95,7 +101,8 @@ const UI_STRINGS = {
         typeHere: '여기에 입력…', differentVibe: '다른 분위기를 원해요? 알려주세요…',
         somethingDifferent: '다른 걸 원해요? 알려주세요…',
         rateLabel: '이 곡 평가:',
-        playlistIntro: '플레이리스트 3개를 준비했어요 — 마음에 드는 걸 골라보세요 🎵' },
+        playlistIntro: '플레이리스트 3개를 준비했어요 — 마음에 드는 걸 골라보세요 🎵',
+        readingDrawing: '그림을 읽는 중...' },
   es: { tagline: 'Dibuja cómo te sientes — te elijo la canción perfecta',
         drawHintMouse: 'Adelante — dibuja con el ratón',
         drawHintTouch: 'Adelante — dibuja con el dedo',
@@ -103,7 +110,8 @@ const UI_STRINGS = {
         typeHere: 'Escribe aquí…', differentVibe: '¿Otro rollo? Cuéntame…',
         somethingDifferent: '¿Algo diferente? Cuéntame…',
         rateLabel: 'Valora esta canción:',
-        playlistIntro: 'Aquí tienes 3 playlists — elige la que más te guste 🎵' },
+        playlistIntro: 'Aquí tienes 3 playlists — elige la que más te guste 🎵',
+        readingDrawing: 'Leyendo tu dibujo...' },
   de: { tagline: 'Zeichne deine Stimmung — ich such dir den passenden Song aus!',
         drawHintMouse: 'Los geht\'s — zeichne mit der Maus',
         drawHintTouch: 'Los geht\'s — zeichne mit dem Finger',
@@ -111,7 +119,8 @@ const UI_STRINGS = {
         typeHere: 'Hier tippen…', differentVibe: 'Lust auf einen anderen Vibe? Sag’s mir…',
         somethingDifferent: 'Etwas anderes? Sag’s mir…',
         rateLabel: 'Bewerte diesen Song:',
-        playlistIntro: 'Hier sind 3 Playlists — such dir einen Vibe aus 🎵' },
+        playlistIntro: 'Hier sind 3 Playlists — such dir einen Vibe aus 🎵',
+        readingDrawing: 'Deine Zeichnung wird gelesen...' },
   ar: { tagline: 'ارسم مزاجك الآن — سأختار لك أغنية تناسبه!',
         drawHintMouse: 'تفضّل — ارسم بالفأرة',
         drawHintTouch: 'تفضّل — ارسم بإصبعك',
@@ -119,7 +128,8 @@ const UI_STRINGS = {
         typeHere: 'اكتب هنا…', differentVibe: 'تريد أجواء مختلفة؟ أخبرني…',
         somethingDifferent: 'تريد شيئًا مختلفًا؟ أخبرني…',
         rateLabel: 'قيّم هذه الأغنية:',
-        playlistIntro: 'إليك 3 قوائم تشغيل — اختر ما يناسب مزاجك 🎵' },
+        playlistIntro: 'إليك 3 قوائم تشغيل — اختر ما يناسب مزاجك 🎵',
+        readingDrawing: 'جارٍ قراءة رسمتك...' },
 };
 
 function pickUiStrings() {
@@ -308,15 +318,13 @@ const telemetry = {
 
 // ─── PEN / ERASER SIZE ──────────────────────────────────
 function calcBasePenWidth() {
-  return Math.max(4, Math.min(REF_W, REF_H) / 140);
+  return Math.max(4, Math.min(REF_W, REF_H) / 50);
 }
 let basePenWidth = calcBasePenWidth();
 
 const SIZE_MIN = 0.3, SIZE_MAX = 5.0;
-let penSizeRaw    = parseFloat(localStorage.getItem('penSizeRaw')    ?? '1.0');
-let eraserSizeRaw = parseFloat(localStorage.getItem('eraserSizeRaw') ?? '2.0');
-penSizeRaw    = Math.min(SIZE_MAX, Math.max(SIZE_MIN, penSizeRaw));
-eraserSizeRaw = Math.min(SIZE_MAX, Math.max(SIZE_MIN, eraserSizeRaw));
+let penSizeRaw    = 1.0;
+let eraserSizeRaw = 2.0;
 
 function penWidth()    { return Math.max(1, basePenWidth * penSizeRaw); }
 function eraserWidth() { return Math.max(4, basePenWidth * eraserSizeRaw); }
@@ -759,14 +767,12 @@ eraserPopup.addEventListener('click', e => e.stopPropagation());
 // ─── SIZE SLIDERS ───────────────────────────────────────
 penSlider.addEventListener('input', () => {
   penSizeRaw = sliderToRaw(parseInt(penSlider.value));
-  localStorage.setItem('penSizeRaw', penSizeRaw);
   telemetry.penSizeChanges++;
   redrawAll();
 });
 
 eraserSlider.addEventListener('input', () => {
   eraserSizeRaw = sliderToRaw(parseInt(eraserSlider.value));
-  localStorage.setItem('eraserSizeRaw', eraserSizeRaw);
 });
 
 // ─── UNDO ───────────────────────────────────────────────
@@ -956,15 +962,15 @@ async function openChat() {
     payload.telemetry = t;
   }
 
-  const typing = addMsg('ai', '…', true);
+  const typing = addMsg('ai', '', true);
+  startReadingWaitAnimation(typing, UI.readingDrawing);
   try {
     const res  = await fetch(`${API_BASE}/chat`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    typing.classList.remove('typing');
-    typing.textContent = data.reply;
+    finishWaitMessage(typing, data.reply);
     chatCount++;
     const bridgingPhrases = /on it|searching now|let me find|i'll find|give me a (second|moment)|let me pull|let me grab a.*track|grab a.*track|pulling it up/i;
     const impliedReady = !data.ready && !data.playlist && bridgingPhrases.test(data.reply);
@@ -974,13 +980,14 @@ async function openChat() {
       setTimeout(fetchSong, 600);
     }
   } catch (err) {
-    typing.textContent = 'Could not reach the server.';
+    finishWaitMessage(typing, 'Could not reach the server.');
     console.error(err);
   }
 }
 
 // ─── CLOSE CHAT ─────────────────────────────────────────
 closeChatBtn.addEventListener('click', () => {
+  stopWaitAnimation();
   chatDialog.classList.remove('open');
   document.body.classList.remove('chat-open');
   phase = 'drawing';
@@ -1001,15 +1008,15 @@ async function sendChat() {
   userResponseCount++;
   songBtn.classList.add('ready');
   addMsg('user', msg);
-  const typing = addMsg('ai', '…', true);
+  const typing = addMsg('ai', '', true);
+  startDotsWaitAnimation(typing);
   try {
     const res  = await fetch(`${API_BASE}/chat`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg, session_id: SESSION_ID }),
     });
     const data = await res.json();
-    typing.classList.remove('typing');
-    typing.textContent = data.reply;
+    finishWaitMessage(typing, data.reply);
     chatCount++;
     const bridgingPhrases = /on it|searching now|let me find|i'll find|give me a (second|moment)|let me pull|let me grab a.*track|grab a.*track|pulling it up/i;
     const impliedReady = !data.ready && !data.playlist && bridgingPhrases.test(data.reply);
@@ -1019,7 +1026,7 @@ async function sendChat() {
       setTimeout(fetchSong, 600);
     }
   } catch (err) {
-    typing.textContent = 'Error — is the backend running?';
+    finishWaitMessage(typing, 'Error — is the backend running?');
     console.error(err);
   }
 }
@@ -1140,13 +1147,15 @@ async function fetchSong() {
   if (cityRevealed) return;
   cityRevealed = true;
 
-  const typing = addMsg('ai', '…', true);
+  const typing = addMsg('ai', '', true);
+  startDotsWaitAnimation(typing);
   try {
     const res  = await fetch(`${API_BASE}/song-result`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'reveal', session_id: SESSION_ID }),
     });
     const data = await res.json();
+    stopWaitAnimation();
     typing.remove();
 
     if (data.error || (!data.song && !data.spotify_url)) {
@@ -1192,8 +1201,9 @@ async function fetchSong() {
     chatInput.placeholder = UI.differentVibe;
 
   } catch (err) {
+    stopWaitAnimation();
     const typing2 = document.querySelector('.msg.typing');
-    if (typing2) typing2.textContent = 'Could not load song result.';
+    if (typing2) finishWaitMessage(typing2, 'Could not load song result.');
     else addMsg('ai', 'Could not load song result.');
     cityRevealed = false;
     console.error(err);
@@ -1202,13 +1212,15 @@ async function fetchSong() {
 
 // ─── PLAYLIST OPTIONS ───────────────────────────────────
 async function fetchPlaylists() {
-  const typing = addMsg('ai', '…', true);
+  const typing = addMsg('ai', '', true);
+  startDotsWaitAnimation(typing);
   try {
     const res  = await fetch(`${API_BASE}/playlist-result`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'playlist', session_id: SESSION_ID }),
     });
     const data = await res.json();
+    stopWaitAnimation();
     typing.remove();
 
     if (!data.playlists?.length) {
@@ -1233,8 +1245,9 @@ async function fetchPlaylists() {
 
     chatInput.placeholder = UI.somethingDifferent;
   } catch (err) {
+    stopWaitAnimation();
     const t = document.querySelector('.msg.typing');
-    if (t) t.textContent = 'Could not load playlists.';
+    if (t) finishWaitMessage(t, 'Could not load playlists.');
     else addMsg('ai', 'Could not load playlists.');
     console.error(err);
   }
@@ -1336,4 +1349,69 @@ function addMsg(role, text, isTyping = false) {
   chatMsgs.appendChild(div);
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
   return div;
+}
+
+const DOT_SUFFIX_CYCLE = ['.', '..', '...'];
+const WAIT_TYPE_MS = 42;
+const WAIT_DOT_MS = 420;
+let _waitAnimToken = 0;
+
+function scrollChatToEnd() {
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+
+function stopWaitAnimation() {
+  _waitAnimToken++;
+}
+
+function readingPhraseBase(phrase) {
+  return phrase.replace(/[.。…]+\s*$/, '');
+}
+
+function startDotsWaitAnimation(el) {
+  const token = ++_waitAnimToken;
+  let i = 0;
+  const tick = () => {
+    if (token !== _waitAnimToken) return;
+    el.textContent = DOT_SUFFIX_CYCLE[i % DOT_SUFFIX_CYCLE.length];
+    scrollChatToEnd();
+    i++;
+    setTimeout(tick, WAIT_DOT_MS);
+  };
+  tick();
+}
+
+function startReadingWaitAnimation(el, phrase) {
+  const token = ++_waitAnimToken;
+  const base = readingPhraseBase(phrase);
+  const full = base + '...';
+  el.classList.add('reading-wait');
+  let n = 0;
+  const typeTick = () => {
+    if (token !== _waitAnimToken) return;
+    el.textContent = full.slice(0, n);
+    scrollChatToEnd();
+    n++;
+    if (n <= full.length) {
+      setTimeout(typeTick, WAIT_TYPE_MS);
+    } else {
+      let i = 0;
+      const dotTick = () => {
+        if (token !== _waitAnimToken) return;
+        el.textContent = base + DOT_SUFFIX_CYCLE[i % DOT_SUFFIX_CYCLE.length];
+        scrollChatToEnd();
+        i++;
+        setTimeout(dotTick, WAIT_DOT_MS);
+      };
+      dotTick();
+    }
+  };
+  typeTick();
+}
+
+function finishWaitMessage(el, text) {
+  stopWaitAnimation();
+  el.classList.remove('typing', 'reading-wait');
+  el.textContent = text;
+  scrollChatToEnd();
 }
