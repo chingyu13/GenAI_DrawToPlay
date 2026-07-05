@@ -1,6 +1,7 @@
 # main.py — FastAPI entry point
 import os
 import time
+import threading
 from collections import defaultdict, deque
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,8 +25,12 @@ RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "60"))
 RATE_LIMIT_WINDOW_SEC = int(os.getenv("RATE_LIMIT_WINDOW_SEC", "60"))
 TRUST_PROXY = os.getenv("TRUST_PROXY", "").lower() in ("1", "true", "yes")
 _request_times: dict[str, deque[float]] = defaultdict(deque)
+_last_sweep = 0.0
 SESSION_LINK_TTL_SEC = int(os.getenv("SESSION_LINK_TTL_SEC", "7200"))
+# session-complete / rate / spotify-opened run in the threadpool (sync def), so this
+# fallback map is touched by multiple threads. _link_lock guards its bookkeeping only.
 _session_db_ids: dict[str, tuple[str, float]] = {}
+_link_lock = threading.Lock()
 
 
 def client_ip(request: Request) -> str:
@@ -41,26 +46,29 @@ def client_ip(request: Request) -> str:
 
 def remember_db_session(frontend_session_id: str, db_session_id: str) -> None:
     now = time.time()
-    expired = [
-        sid for sid, (_, created_at) in _session_db_ids.items()
-        if now - created_at > SESSION_LINK_TTL_SEC
-    ]
-    for sid in expired:
-        _session_db_ids.pop(sid, None)
-    _session_db_ids[frontend_session_id] = (db_session_id, now)
+    with _link_lock:
+        expired = [
+            sid for sid, (_, created_at) in _session_db_ids.items()
+            if now - created_at > SESSION_LINK_TTL_SEC
+        ]
+        for sid in expired:
+            _session_db_ids.pop(sid, None)
+        _session_db_ids[frontend_session_id] = (db_session_id, now)
 
 
 def session_matches_db(frontend_session_id: str, db_session_id: str) -> bool:
+    # DB check first (survives restarts / works across instances) — I/O, kept out of the lock.
     if session_belongs_to_frontend(db_session_id, frontend_session_id):
         return True
-    remembered = _session_db_ids.get(frontend_session_id)
-    if not remembered:
-        return False
-    remembered_db_id, created_at = remembered
-    if time.time() - created_at > SESSION_LINK_TTL_SEC:
-        _session_db_ids.pop(frontend_session_id, None)
-        return False
-    return remembered_db_id == db_session_id
+    with _link_lock:
+        remembered = _session_db_ids.get(frontend_session_id)
+        if not remembered:
+            return False
+        remembered_db_id, created_at = remembered
+        if time.time() - created_at > SESSION_LINK_TTL_SEC:
+            _session_db_ids.pop(frontend_session_id, None)
+            return False
+        return remembered_db_id == db_session_id
 
 app.add_middleware(
     CORSMiddleware,
@@ -76,6 +84,19 @@ async def rate_limit(request: Request, call_next):
         return await call_next(request)
     ip = client_ip(request)
     now = time.time()
+
+    # Opportunistic sweep (at most once per window) drops IPs with no activity in
+    # the window, so one-shot visitors don't accumulate forever. This middleware runs
+    # on the event loop (single-threaded) with no await inside the block, so it needs
+    # no lock. Building `stale` fully before deleting avoids mutating during iteration.
+    global _last_sweep
+    if now - _last_sweep > RATE_LIMIT_WINDOW_SEC:
+        _last_sweep = now
+        stale = [k for k, b in _request_times.items()
+                 if not b or now - b[-1] > RATE_LIMIT_WINDOW_SEC]
+        for k in stale:
+            del _request_times[k]
+
     bucket = _request_times[ip]
     while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SEC:
         bucket.popleft()

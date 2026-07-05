@@ -2,6 +2,7 @@
 import os
 import json
 import psycopg2
+from contextlib import closing
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,7 +22,7 @@ def save_session(data: dict):
     First song reveal → INSERT. Follow-up songs → UPDATE song fields only.
     Drawing/telemetry/strokes are never overwritten after the first insert.
     """
-    with get_conn() as conn:
+    with closing(get_conn()) as conn, conn:
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO sessions (
@@ -52,8 +53,9 @@ def save_session(data: dict):
                     recommended_song          = EXCLUDED.recommended_song,
                     recommended_artist        = EXCLUDED.recommended_artist,
                     ai_reason                 = EXCLUDED.ai_reason,
-                    spotify_url               = EXCLUDED.spotify_url,
-                    spotify_opened            = FALSE
+                    spotify_url               = EXCLUDED.spotify_url
+                    -- spotify_opened is session-wide: once TRUE (user opened Spotify
+                    -- for any song this session) it must NOT be reset by follow-up saves.
                 RETURNING id;
             """, {
                 "frontend_session_id":       data.get("frontend_session_id"),
@@ -85,7 +87,7 @@ def save_session(data: dict):
 
 def session_belongs_to_frontend(db_session_id: str, frontend_session_id: str) -> bool:
     """Verify db row belongs to the frontend session (survives process restarts)."""
-    with get_conn() as conn:
+    with closing(get_conn()) as conn, conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT 1 FROM sessions WHERE id = %s AND frontend_session_id = %s LIMIT 1;",
@@ -96,7 +98,7 @@ def session_belongs_to_frontend(db_session_id: str, frontend_session_id: str) ->
 
 def update_spotify_opened(session_id: str):
     """Mark that the user clicked through to Spotify."""
-    with get_conn() as conn:
+    with closing(get_conn()) as conn, conn:
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE sessions SET spotify_opened = TRUE WHERE id = %s;",
@@ -106,7 +108,7 @@ def update_spotify_opened(session_id: str):
 
 def append_song_rating(db_session_id: str, song: str, artist: str, score: int):
     """Append a rating entry to the song_ratings JSONB array."""
-    with get_conn() as conn:
+    with closing(get_conn()) as conn, conn:
         with conn.cursor() as cur:
             cur.execute("""
                 UPDATE sessions

@@ -2,16 +2,22 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from dotenv import load_dotenv
-import os, json, time
+import os, json, time, threading
 
 load_dotenv()
 
 # gpt-4o required for vision (image input)
-llm = ChatOpenAI(model="gpt-4o", temperature=0.85)
+# timeout is generous: the first call sends the drawing image and can legitimately
+# take 20-40s; max_retries bounds retries so a hung upstream fails instead of hanging forever.
+llm = ChatOpenAI(model="gpt-4o", temperature=0.85, timeout=45, max_retries=2)
 
 # Store message history per session: { session_id: [HumanMessage, AIMessage, ...] }
+# Endpoints run in Starlette's threadpool (sync def handlers), so these dicts are
+# touched by multiple threads. _memory_lock guards the fast bookkeeping only — it is
+# never held across an llm.invoke, so it adds no serialization to the expensive calls.
 session_memories: dict[str, list] = {}
 session_last_seen: dict[str, float] = {}
+_memory_lock = threading.Lock()
 SESSION_TTL_SEC = int(os.getenv("SESSION_TTL_SEC", "7200"))
 MAX_SESSIONS = int(os.getenv("MAX_SESSIONS", "1000"))
 
@@ -343,28 +349,31 @@ def _require_keys(data: dict, keys: tuple[str, ...]) -> dict:
 
 def get_or_create_memory(session_id: str) -> list:
     now = time.time()
-    expired = [
-        sid for sid, last_seen in session_last_seen.items()
-        if now - last_seen > SESSION_TTL_SEC
-    ]
-    for sid in expired:
-        session_memories.pop(sid, None)
-        session_last_seen.pop(sid, None)
-    if len(session_memories) >= MAX_SESSIONS and session_id not in session_memories:
-        oldest = min(session_last_seen, key=session_last_seen.get)
-        session_memories.pop(oldest, None)
-        session_last_seen.pop(oldest, None)
-    if session_id not in session_memories:
-        session_memories[session_id] = []
-    session_last_seen[session_id] = now
-    return session_memories[session_id]
+    with _memory_lock:
+        expired = [
+            sid for sid, last_seen in session_last_seen.items()
+            if now - last_seen > SESSION_TTL_SEC
+        ]
+        for sid in expired:
+            session_memories.pop(sid, None)
+            session_last_seen.pop(sid, None)
+        if len(session_memories) >= MAX_SESSIONS and session_id not in session_memories:
+            oldest = min(session_last_seen, key=session_last_seen.get)
+            session_memories.pop(oldest, None)
+            session_last_seen.pop(oldest, None)
+        if session_id not in session_memories:
+            session_memories[session_id] = []
+        session_last_seen[session_id] = now
+        return session_memories[session_id]
 
 
 def get_conversation(session_id: str) -> list:
     """Session history as plain dicts for DB storage."""
+    with _memory_lock:
+        history = list(session_memories.get(session_id, []))
     return [
         {"role": "user" if m.type == "human" else "assistant", "content": m.content}
-        for m in session_memories.get(session_id, [])
+        for m in history
     ]
 
 

@@ -30,6 +30,12 @@ body { height: 100lvh; }
   visibility: hidden; pointer-events: none;
 }
 
+@media (max-width: 768px) {
+  #draw-hint {
+    top: calc(50% - 24vw);
+  }
+}
+
 #draw-hint {
   position: fixed;
   left: 50%;
@@ -306,8 +312,8 @@ body { height: 100lvh; }
 }
 #send-btn:hover { background: var(--bubble-bg-strong, rgba(255,255,255,0.35)); }
 
-/* ── City card — rendered as a chat bubble inside the dialog ── */
-.msg.city-card {
+/* ── Song card — rendered as a chat bubble inside the dialog ── */
+.msg.song-card {
   max-width: 88%;
   padding: 0;
   border-radius: 18px;
@@ -323,43 +329,43 @@ body { height: 100lvh; }
   from { opacity: 0; transform: translateY(16px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0)    scale(1);    }
 }
-.city-card-img-wrap {
+.song-card-img-wrap {
   width: 100%; height: 150px;
   overflow: hidden;
   display: block;
 }
-.city-card-img {
+.song-card-img {
   width: 100%; height: 100%;
   object-fit: cover; display: block;
 }
-.city-card-body {
+.song-card-body {
   padding: 12px 14px 14px;
 }
-.city-card-name {
+.song-card-name {
   font-size: 1.08rem; font-weight: 700;
   color: var(--pen-color, #fff);
   margin-bottom: 5px; letter-spacing: 0.01em;
 }
-.city-card-artist {
+.song-card-artist {
   font-size: 0.88rem;
   color: var(--pen-color, #fff);
   opacity: 0.65;
   margin-bottom: 8px;
 }
-.city-card-reason {
+.song-card-reason {
   font-size: 0.86rem; line-height: 1.5;
   color: var(--pen-color, #fff);
   opacity: 0.82; font-style: italic;
   margin-bottom: 10px;
 }
-.city-card-spotify {
+.song-card-spotify {
   display: inline-block;
   font-size: 0.82rem; font-weight: 600;
   color: #1DB954;
   text-decoration: none;
   letter-spacing: 0.02em;
 }
-.city-card-spotify:hover { opacity: 0.8; }
+.song-card-spotify:hover { opacity: 0.8; }
 
 /* ── Playlist options — 3 stacked clickable cards ── */
 .playlist-options {
@@ -418,14 +424,12 @@ body { height: 100lvh; }
   .msg                   { font-size: 1.15rem; }
   #chat-input            { font-size: 1.1rem; }
   #chat-input::placeholder { font-size: 1.1rem; }
-  .city-card-name        { font-size: 1.3rem; }
-  .city-card-artist      { font-size: 1.02rem; }
-  .city-card-reason      { font-size: 1rem; }
-  .city-card-spotify     { font-size: 0.95rem; }
+  .song-card-name        { font-size: 1.3rem; }
+  .song-card-artist      { font-size: 1.02rem; }
+  .song-card-reason      { font-size: 1rem; }
+  .song-card-spotify     { font-size: 0.95rem; }
   .playlist-option-name  { font-size: 1.02rem; }
   .playlist-option-meta  { font-size: 0.87rem; }
   .star-label            { font-size: 0.92rem; }
   .star                  { font-size: 1.6rem; }
 }
-
-#city-reveal { display: none !important; }

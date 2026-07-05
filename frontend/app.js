@@ -31,11 +31,6 @@ const chatMsgs       = document.getElementById('chat-messages');
 const chatInput      = document.getElementById('chat-input');
 const sendBtn        = document.getElementById('send-btn');
 const songBtn        = document.getElementById('song-btn');
-const cityReveal     = document.getElementById('city-reveal');
-const cityRevealImg     = document.getElementById('city-reveal-img');
-const cityRevealReason  = document.getElementById('city-reveal-reason');
-const cityRevealName    = document.getElementById('city-reveal-name');
-const cityRevealWeather = document.getElementById('city-reveal-weather');
 const drawHintEl        = document.getElementById('draw-hint');
 
 // ─── STATIC UI STRINGS (by browser language) ────────────
@@ -239,6 +234,23 @@ function resizeCanvasToWindow() {
 }
 resizeCanvasToWindow();
 
+// ─── EYE SIZE (edit these) ──────────────────────────────
+// #hint-eyes sets the template; eyes are drawn onto #drawing-canvas from it.
+const EYE_WIDTH_VW        = 24; // wide screens (desktop)
+const EYE_WIDTH_VW_MOBILE = 50; // narrow screens (mobile)
+const EYE_MOBILE_MAX_PX   = 768;
+
+function eyeWidthVw() {
+  return window.innerWidth <= EYE_MOBILE_MAX_PX ? EYE_WIDTH_VW_MOBILE : EYE_WIDTH_VW;
+}
+
+function layoutHintEyes() {
+  const vw = eyeWidthVw();
+  hintEyes.style.width = `${window.innerWidth * vw / 100}px`;
+}
+
+layoutHintEyes();
+
 // CSS px → reference coords (accounts for chat-open scale + view transform)
 function eventToRef(cssX, cssY) {
   const r  = drawCanvas.getBoundingClientRect();
@@ -286,7 +298,7 @@ let currentBgHex = null;
 
 let chatCount         = 0;
 let totalDialogOpens  = 0;
-let cityRevealed      = false;
+let songRevealed      = false;
 let userResponseCount = 0;
 
 let drawingPhaseStart    = null;
@@ -318,7 +330,7 @@ const telemetry = {
 
 // ─── PEN / ERASER SIZE ──────────────────────────────────
 function calcBasePenWidth() {
-  return Math.max(4, Math.min(REF_W, REF_H) / 50);
+  return Math.max(4, Math.min(REF_W*1.3, REF_H) / 50);
 }
 let basePenWidth = calcBasePenWidth();
 
@@ -361,7 +373,7 @@ function renderStroke(s) {
     drawCtx.lineWidth   = s.width;
     drawCtx.lineCap = 'round'; drawCtx.lineJoin = 'round';
   } else {
-    setupLineCtx(penColor, penWidth());
+    setupLineCtx(penColor, s.width > 0 ? s.width : penWidth());
   }
   const pts = s.points;
   if (!pts || pts.length === 0) return;
@@ -398,6 +410,7 @@ function redrawAll() {
 
 window.addEventListener('resize', () => {
   stopHintAnimation();
+  layoutHintEyes();
   if (phase === 'color-select') buildEmojiMarquee();
   if (document.body.classList.contains('chat-open')) {
     layoutMiniCanvas();
@@ -546,7 +559,7 @@ function bakeEyeStroke(pathEl, totalLen) {
   for (let i = 0; i <= samples; i++) {
     points.push(svgPtToCanvas(pathEl.getPointAtLength(Math.min(i * step, totalLen))));
   }
-  return { type: 'pen', points };
+  return { type: 'pen', points, width: penWidth() };
 }
 
 function drawPathSegment(pathEl, fromLen, toLen) {
@@ -600,6 +613,7 @@ function animateEyeOnCanvas() {
 }
 
 function startHintAnimation() {
+  layoutHintEyes(); // must run before sampling paths — width drives getScreenCTM()
   eyeAnimFrame = 0; eyeDrawnLeftLen = 0; eyeDrawnRightLen = 0;
   eyeAnimId = requestAnimationFrame(animateEyeOnCanvas);
 }
@@ -927,7 +941,7 @@ function computeDrawingCoverage() {
 }
 
 async function openChat() {
-  if (cityRevealed) return;
+  if (songRevealed) return;
   phase = 'chat';
   totalDialogOpens++;
   if (drawingPhaseStart) { drawingAccumMs += Date.now() - drawingPhaseStart; drawingPhaseStart = null; }
@@ -1053,7 +1067,7 @@ chatInput.addEventListener('keydown', e => {
 });
 
 songBtn.addEventListener('click', () => {
-  if (cityRevealed) return;
+  if (songRevealed) return;
   fetchSong();
 });
 
@@ -1144,8 +1158,8 @@ function addStarRating() {
 
 // ─── SONG REVEAL ────────────────────────────────────────
 async function fetchSong() {
-  if (cityRevealed) return;
-  cityRevealed = true;
+  if (songRevealed) return;
+  songRevealed = true;
 
   const typing = addMsg('ai', '', true);
   startDotsWaitAnimation(typing);
@@ -1161,29 +1175,32 @@ async function fetchSong() {
     if (data.error || (!data.song && !data.spotify_url)) {
       console.warn('[song] result error:', data.error, data.raw);
       addMsg('ai', "Hmm, I couldn't lock in a song — ask me again in a sec?");
-      cityRevealed = false;
+      songRevealed = false;
       return;
     }
 
     const card = buildSongCard(data);
 
-    const spotifyLink = card.querySelector('.city-card-spotify-link');
+    const spotifyLink = card.querySelector('.song-card-spotify-link');
     if (spotifyLink) {
       spotifyLink.style.cursor = 'pointer';
-      spotifyLink.addEventListener('click', async () => {
+      spotifyLink.addEventListener('click', () => {
+        // Fire-and-forget engagement ping. The anchor's target="_blank" opens the
+        // new tab natively, so we must NOT window.open after an await (popup blockers
+        // reject that) nor preventDefault (that would cancel the native new-tab open).
         if (dbSessionId) {
           try {
-            await fetch(`${API_BASE}/spotify-opened`, {
+            fetch(`${API_BASE}/spotify-opened`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ session_id: SESSION_ID, db_session_id: dbSessionId }),
+              keepalive: true,
             });
           } catch (e) { /* non-blocking */ }
         }
-        window.open(spotifyLink.href, '_blank', 'noopener');
       });
     }
 
-    const imgWrap = card.querySelector('.city-card-img-wrap');
+    const imgWrap = card.querySelector('.song-card-img-wrap');
     if (imgWrap && data.spotify_url) {
       imgWrap.style.cursor = 'pointer';
       imgWrap.addEventListener('click', () => spotifyLink && spotifyLink.click());
@@ -1196,7 +1213,7 @@ async function fetchSong() {
     const saved = await saveSession(data);
     if (saved) addStarRating();
 
-    cityRevealed = false;
+    songRevealed = false;
     chatCount    = 0;
     chatInput.placeholder = UI.differentVibe;
 
@@ -1205,7 +1222,7 @@ async function fetchSong() {
     const typing2 = document.querySelector('.msg.typing');
     if (typing2) finishWaitMessage(typing2, 'Could not load song result.');
     else addMsg('ai', 'Could not load song result.');
-    cityRevealed = false;
+    songRevealed = false;
     console.error(err);
   }
 }
@@ -1265,7 +1282,7 @@ function safeHttpUrl(value) {
 
 function buildSongCard(data) {
   const card = document.createElement('div');
-  card.className = 'msg ai city-card';
+  card.className = 'msg ai song-card';
 
   const trackLabel = `${data.song || 'Your song'}${data.artist ? ` · ${data.artist}` : ''}`;
   const imageUrl = safeHttpUrl(data.image);
@@ -1273,10 +1290,10 @@ function buildSongCard(data) {
 
   if (imageUrl) {
     const imgWrap = document.createElement('a');
-    imgWrap.className = 'city-card-img-wrap';
+    imgWrap.className = 'song-card-img-wrap';
 
     const img = document.createElement('img');
-    img.className = 'city-card-img';
+    img.className = 'song-card-img';
     img.src = imageUrl;
     img.alt = trackLabel;
 
@@ -1285,26 +1302,28 @@ function buildSongCard(data) {
   }
 
   const body = document.createElement('div');
-  body.className = 'city-card-body';
+  body.className = 'song-card-body';
 
   const name = document.createElement('div');
-  name.className = 'city-card-name';
+  name.className = 'song-card-name';
   name.textContent = data.song || '';
 
   const artist = document.createElement('div');
-  artist.className = 'city-card-artist';
+  artist.className = 'song-card-artist';
   artist.textContent = data.artist || '';
 
   const reason = document.createElement('div');
-  reason.className = 'city-card-reason';
+  reason.className = 'song-card-reason';
   reason.textContent = data.reason || '';
 
   body.append(name, artist, reason);
 
   if (spotifyUrl) {
     const link = document.createElement('a');
-    link.className = 'city-card-spotify city-card-spotify-link';
+    link.className = 'song-card-spotify song-card-spotify-link';
     link.href = spotifyUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
     link.textContent = '▶ Open in Spotify';
     body.appendChild(link);
   }

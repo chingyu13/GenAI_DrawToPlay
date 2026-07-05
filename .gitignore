@@ -7,6 +7,9 @@ project-details.md
 # Local analysis notebooks (contain DB credentials + user data)
 analysis/
 
+# Audit reports (local only — not for repo)
+audit-report-*
+
 # Python
 __pycache__/
 *.pyc
